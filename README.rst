@@ -2,4 +2,5 @@
 HiLCaT
 ==========
 
-High Level Cache Tool.
+High level key-value storage and cache tool.
+
