@@ -5,7 +5,7 @@ Core code for the high level abstract cache.
 """
 
 from typing import (
-    Any,
+    Any, Dict,
     Callable, Iterable,
     Hashable,
 )
@@ -13,6 +13,7 @@ from abc import (
     ABC, abstractmethod,
 )
 import os
+import pathlib
 
 class Storage(ABC):
     """
@@ -163,7 +164,7 @@ class MemoryCache(Cache, ABC):
         self.data[scope][key] = value
         return True
 
-    def update(self, key: Any, value: Any, scope: Any = None, **kwargs) -> Any:
+    def update(self, key: Hashable, value: Any, scope: Hashable = None, **kwargs) -> Any:
         old = None
         if self.exists(key, scope=scope):
             old = self.fetch(key, scope=scope)
@@ -175,8 +176,11 @@ class MemoryCache(Cache, ABC):
             return self.data[scope].pop(key)
         return None
 
-def ensure_parent_dir_exist(filepath: str):
-    os.makedirs(os.path.abspath(os.path.dirname(filepath)), exist_ok=True)
+    def scopes(self) -> Iterable[Hashable]:
+        return self.data.keys()
+
+    def keys(self, scope: Any = None) -> Iterable[Hashable]:
+        return self.data.get(scope, {}).keys()
 
 class LocalFileCache(Cache):
     """
@@ -208,33 +212,40 @@ class LocalFileCache(Cache):
         return default
 
     @abstractmethod
+    def write_file0(self, filepath: str, content: Any):
+        """
+        The actual write file method.
+        """
+
     def write_file(self, filepath: str, content: Any):
         """
         Write content to file.
         """
+        # create parent dir first
+        os.makedirs(os.path.abspath(os.path.dirname(filepath)), exist_ok=True)
+        self.write_file0(filepath, content)
 
     def set(self, key: Any, value: Any, scope: Any = None, **kwargs) -> bool:
         filepath = self.get_filepath(key, scope=scope)
-        ensure_parent_dir_exist(filepath)
         self.write_file(filepath, value)
         return True
 
-    def update(self, key: Any, value: Any, scope: Any = None, **kwargs) -> Any:
+    def update(self, key: Any, value: Any, scope: Any = None, return_old=False, **kwargs) -> Any:
         filepath = self.get_filepath(key, scope=scope)
         result = None
-        if os.path.exists(filepath):
+        if return_old and os.path.exists(filepath):
             result = self.read_file(filepath)
         self.write_file(filepath, value)
         return result
 
-    def pop(self, key: Any, scope: Any = None, **kwargs) -> Any:
+    def pop(self, key: Any, scope: Any = None, return_old=False, **kwargs) -> Any:
         filepath = self.get_filepath(key, scope=scope)
+        result = None
         if os.path.exists(filepath):
-            # should return old value or not ?
-            # value = self.read_file(filepath)
+            if return_old:
+                result = self.read_file(filepath)
             os.remove(filepath)
-            # return value
-        return None
+        return result
 
 class BinaryFileCache(LocalFileCache, ABC):
     """
@@ -244,7 +255,7 @@ class BinaryFileCache(LocalFileCache, ABC):
         with open(filepath, 'rb') as f:
             return f.read()
 
-    def write_file(self, filepath: str, content: Any):
+    def write_file0(self, filepath: str, content: Any):
         with open(filepath, 'wb') as f:
             f.write(content)
 
@@ -262,7 +273,7 @@ class TextFileCache(LocalFileCache, ABC):
         with open(filepath, encoding=self.encoding) as f:
             return f.read()
 
-    def write_file(self, filepath: str, content: str):
+    def write_file0(self, filepath: str, content: str):
         with open(filepath, 'w', encoding=self.encoding) as f:
             f.write(content)
 
@@ -278,8 +289,15 @@ class SimpleLocalFileCache(LocalFileCache, ABC):
         self.root_dir = root_dir
         self.suf = suf
 
-    def get_filepath(self, key: Any, scope: Any = None) -> str:
+    def get_filepath(self, key: str, scope: str = None) -> str:
         return os.path.join(self.root_dir, scope or '', key + self.suf)
+
+    def keys(self, scope: Any = None) -> Iterable[str]:
+        # find all files under the directory
+        root = pathlib.Path(self.root_dir)
+        for f in root.rglob("*" + self.suf):
+            if f.is_file():
+                yield f.relative_to(root).as_posix()[:-len(self.suf)]
 
 class SimpleBinaryFileCache(SimpleLocalFileCache, BinaryFileCache):
     def __init__(self, root_dir: str, suf: str = ''):
@@ -328,3 +346,19 @@ class MiddleCache(Cache, ABC):
         for scope in scopes:
             values = self.get_scope_values(scope)
             self.storage.set(scope, values)
+
+class MemoryMiddleCache(MemoryCache, MiddleCache):
+    """
+    Data cached in memory with a persistent storage.
+    """
+
+    def __init__(self, storage: Storage):
+        MemoryCache.__init__(self)
+        MiddleCache.__init__(self, storage)
+
+    def set_scope_values(self, data: Dict[Hashable, Any], scope: Hashable = None):
+        self.data[scope] = data
+
+    def get_scope_values(self, scope: Hashable = None) -> Dict[Hashable, Any]:
+        return self.data.get(scope, {})
+
