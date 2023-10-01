@@ -211,11 +211,13 @@ class LocalFileCache(Cache):
             return self.read_file(filepath)
         return default
 
-    @abstractmethod
     def write_file0(self, filepath: str, content: Any):
         """
         The actual write file method.
         """
+        # Someone may overwrite write_file() and this method would not be called.
+        # If it's not necessary, there is no impact for raising and error.
+        raise NotImplementedError()
 
     def write_file(self, filepath: str, content: Any):
         """
