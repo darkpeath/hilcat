@@ -12,13 +12,13 @@ class RedisCache(Cache):
     Ignore scope for all cache methods.
     """
 
-    def __init__(self, client: redis.Redis = None, url: str = None, host: str = None, port: int = None):
+    def __init__(self, client: redis.Redis = None, url: str = None, host: str = None, port: int = None, db=0):
         if client is not None:
             self.client = client
         elif url is not None:
             self.client = redis.from_url(url)
         elif host is not None:
-            self.client = redis.Redis(host=host, port=port)
+            self.client = redis.Redis(host=host, port=port, db=db)
         else:
             raise ValueError("One of client, url or host should given.")
 
