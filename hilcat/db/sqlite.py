@@ -130,24 +130,16 @@ class SqliteCache(Cache):
         self._create_table_if_not_exists(config)    # create table if not exists
         return config
 
-    @staticmethod
-    def _serialize_column_value(v: Any) -> str:
-        if v is None:
-            return "null"
-        return json.dumps(v)
-
     def exists(self, key: str, scope: str = None, **kwargs) -> bool:
         config = self._get_scope_config(scope)
-        self.cursor.execute(f"SELECT {config.uniq_id} FROM {scope}"
-                            f" WHERE {config.uniq_id} = {self._serialize_column_value(key)} LIMIT 1")
+        self.cursor.execute(f"SELECT {config.uniq_id} FROM {scope} WHERE {config.uniq_id} = ? LIMIT 1", [key])
         return self.cursor.fetchone() is not None
 
     def fetch(self, key: str, default: Any = None, scope: Any = None, **kwargs) -> Optional[Dict[str, Any]]:
         config = self._get_scope_config(scope)
-        stmt = (f"SELECT {','.join(config.columns)} FROM {scope}"
-                f" WHERE {config.uniq_id} = {self._serialize_column_value(key)} LIMIT 1")
+        stmt = f"SELECT {','.join(config.columns)} FROM {scope} WHERE {config.uniq_id} = ? LIMIT 1"
         cursor = self.conn.cursor()
-        cursor.execute(stmt)
+        cursor.execute(stmt, [key])
         row = cursor.fetchone()
         if row is None:
             return default
@@ -163,19 +155,20 @@ class SqliteCache(Cache):
             row = {config.uniq_id: key}
             row.update((name, value[name]) for name in config.columns if name in value)
         stmt = (f"INSERT INTO {scope}({','.join(row.keys())})"
-                f" VALUES ({','.join(map(self._serialize_column_value, row.values()))})"
+                f" VALUES ({','.join('?' for _ in row.values())})"
                 f" ON CONFLICT({config.uniq_id}) DO UPDATE"
-                f" SET {','.join(f'{k}={self._serialize_column_value(v)}' for k, v in row.items())}")
+                f" SET {','.join(f'{k}=?' for k, v in row.items())}")
+        params = list(row.values()) * 2
         cursor = self.conn.cursor()
-        cursor.execute(stmt)
+        cursor.execute(stmt, params)
         self.conn.commit()
         return True
 
     def pop(self, key: str, scope: str = None, **kwargs) -> None:
         config = self._get_scope_config(scope)
-        stmt = f"DELETE FROM {scope} WHERE {config.uniq_id} = {self._serialize_column_value(key)}"
+        stmt = f"DELETE FROM {scope} WHERE {config.uniq_id} = ?"
         cursor = self.conn.cursor()
-        cursor.execute(stmt)
+        cursor.execute(stmt, [key])
         self.conn.commit()
 
     def scopes(self) -> Iterable[str]:
