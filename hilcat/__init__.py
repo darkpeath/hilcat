@@ -8,4 +8,4 @@ from .core import (
     TextFileCache, SimpleTextFileCache,
     MiddleCache,
 )
-from .sqlite import SqliteCache, SqliteScopeConfig
+from .db import SqliteCache, SqliteScopeConfig
