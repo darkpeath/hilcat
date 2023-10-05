@@ -12,7 +12,6 @@ from typing import (
 )
 import dataclasses
 import sqlite3
-import json
 from hilcat.core import Cache
 
 @dataclasses.dataclass
