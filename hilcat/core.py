@@ -364,3 +364,41 @@ class MemoryMiddleCache(MemoryCache, MiddleCache):
     def get_scope_values(self, scope: Hashable = None) -> Dict[Hashable, Any]:
         return self.data.get(scope, {})
 
+
+class CacheAgent(Cache):
+    """
+    Use multi cache as backends when write data.
+    First cache as backend when read data.
+    """
+
+    def __init__(self, backend: Cache, *extra_writers: Cache):
+        self.backend = backend
+        self.extra_writers = extra_writers
+
+    def exists(self, key: Any, scope: Any = None, **kwargs) -> bool:
+        return self.backend.exists(key, scope=scope, **kwargs)
+
+    def fetch(self, key: Any, default: Any = None, scope: Any = None, **kwargs) -> Any:
+        return self.backend.fetch(key, default=default, scope=scope, **kwargs)
+
+    def set(self, key: Any, value: Any, scope: Any = None, **kwargs) -> Any:
+        for backend in self.extra_writers:
+            backend.set(key, value, scope=scope, **kwargs)
+        return self.backend.set(key, value, scope=scope, **kwargs)
+
+    def update(self, key: Any, value: Any, scope: Any = None, **kwargs) -> Any:
+        for backend in self.extra_writers:
+            backend.update(key, value, scope=scope, **kwargs)
+        return self.backend.update(key, value, scope=scope, **kwargs)
+
+    def pop(self, key: Any, scope: Any = None, **kwargs) -> Any:
+        for backend in self.extra_writers:
+            backend.pop(key, scope=scope, **kwargs)
+        return self.backend.pop(key, scope=scope, **kwargs)
+
+    def scopes(self) -> Iterable[Any]:
+        return self.backend.scopes()
+
+    def keys(self, scope: Any = None) -> Iterable[Any]:
+        return self.backend.keys(scope=scope)
+
