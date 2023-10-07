@@ -3,10 +3,10 @@
 from hilcat import SqliteCache, SqliteScopeConfig
 
 def test_sqlite():
-    cache = SqliteCache("t.db", scopes=[
-        SqliteScopeConfig(scope='a', uniq_id='id', columns=['id', 'name', 'comment', 'count'],
+    cache = SqliteCache(database="t.db", scopes=[
+        SqliteScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
                           column_types={'count': 'int'}),
-        SqliteScopeConfig(scope='b', uniq_id='eid', columns=['eid', 'name', 'comment', 'status'])
+        SqliteScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
     ])
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')
     cache.set(key='a2', value={'name': 'iiwwww', 'comment': 'this is a2', 'count': 3}, scope='a')
