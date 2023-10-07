@@ -14,7 +14,7 @@ from typing import (
 from abc import ABC, abstractmethod
 from types import ModuleType
 import dataclasses
-from hilcat.core import Cache
+from ..core import Cache
 
 _FETCH_SIZE_TYPE = Union[Literal['one', 'all'], int]
 _EXECUTE_PARAM_TYPE = Union[Sequence[Any], Dict[str, Any]]

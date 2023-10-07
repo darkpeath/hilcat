@@ -6,14 +6,12 @@ Actually, implement a cache is enough.
 """
 
 from typing import (
-    Any, Dict,
-    List, Union,
+    Any, Dict, List,
 )
 import sqlite3
-
 from .relational import (
     RelationalDbScopeConfig,
-    RelationalDbCache, Operation, _FETCH_SIZE_TYPE
+    RelationalDbCache, Operation
 )
 
 class SqliteScopeConfig(RelationalDbScopeConfig):
