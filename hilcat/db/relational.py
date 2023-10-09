@@ -47,7 +47,7 @@ class Operation:
     """
     define an operation for execute() or executemany()
     """
-    template: str       # arg operation for cursor.execute()
+    statement: str       # arg operation for cursor.execute()
     parameters: _EXECUTE_PARAM_TYPE = dataclasses.field(default_factory=list)  # arg parameters for cursor.execute()
 
     # many statements in template or not, if True, use cursor.executemany() instead of cursor.execute()
@@ -58,6 +58,13 @@ class SqlBuilder(ABC):
     Build select, update, delete sql for relational database.
     It's used by relational cache to manipulate data.
     """
+
+    def build_select_all_table_operation(self) -> Operation:
+        """
+        Generate sql to select all tables in the database.
+        Table name as first selected column.
+        """
+        raise NotImplementedError()
 
     @abstractmethod
     def build_create_table_operation(self, *configs: RelationalDbScopeConfig, check_exists=True):
@@ -115,7 +122,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             sql += f" {config.table} ({gen_column_defines(config)})"
             return sql
         lines = [gen_create_table_sql(x) + ";" for x in configs]
-        return Operation(template="\n".join(lines), many=len(configs) > 1)
+        return Operation(statement="\n".join(lines), many=len(configs) > 1)
 
     @abstractmethod
     def get_variable_placeholder(self, name: str = None, order: int = None, value: Any = None) -> str:
@@ -160,15 +167,15 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             select_columns = config.columns_with_id
         elif isinstance(select_columns, str):
             select_columns = [select_columns]
-        template = f"SELECT {','.join(select_columns)} FROM {config.scope}"
+        stmt = f"SELECT {','.join(select_columns)} FROM {config.scope}"
         variable_values = {}
         if key is not None:
             name = config.uniq_column
             placeholder = self.config_variable(name=name, order=1, value=key, variable_mapping=variable_values)
-            template += f" WHERE {config.uniq_column} = {placeholder}"
+            stmt += f" WHERE {config.uniq_column} = {placeholder}"
         if limit > 0:
-            template += f" LIMIT {limit}"
-        return Operation(template=template, parameters=self.normalize_variable_values(variable_values))
+            stmt += f" LIMIT {limit}"
+        return Operation(statement=stmt, parameters=self.normalize_variable_values(variable_values))
 
     def build_update_operation(self, config: RelationalDbScopeConfig, key: str, value: Dict[str, Any]) -> Operation:
         # sql is writen based of syntax of sqlite, maybe is incapable with other database
@@ -176,21 +183,21 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
                          for i, (k, v) in enumerate(value.items(), 1))
         second = ','.join(f'{k}={self.config_variable(name=k, order=i, value=v)}'
                           for i, (k, v) in enumerate(value.items(), 1))
-        template = (f"INSERT INTO {config.scope}({','.join(value.keys())})"
-                    f" VALUES ({first})"
-                    f" ON CONFLICT({config.uniq_column}) DO UPDATE"
-                    f" SET {second}")
+        stmt = (f"INSERT INTO {config.scope}({','.join(value.keys())})"
+                f" VALUES ({first})"
+                f" ON CONFLICT({config.uniq_column}) DO UPDATE"
+                f" SET {second}")
         parameters = self.normalize_variable_values(variable_values=value, variable_names=list(value.keys()) * 2)
-        return Operation(template=template, parameters=parameters)
+        return Operation(statement=stmt, parameters=parameters)
 
     def build_delete_operation(self, config: RelationalDbScopeConfig, key: str = None) -> Operation:
-        template = f"DELETE FROM {config.scope}"
+        stmt = f"DELETE FROM {config.scope}"
         variable_values = {}
         if key is not None:
             placeholder = self.config_variable(name=config.uniq_column, order=1, value=key,
                                                variable_mapping=variable_values)
-            template += f" WHERE {config.uniq_column} = {placeholder}"
-        return Operation(template=template, parameters=self.normalize_variable_values(variable_values))
+            stmt += f" WHERE {config.uniq_column} = {placeholder}"
+        return Operation(statement=stmt, parameters=self.normalize_variable_values(variable_values))
 
 class QmarkSqlBuilder(SimpleSqlBuilder):
 
@@ -312,11 +319,13 @@ class RelationalDbCache(Cache, ABC):
         operation = self.sql_builder.build_create_table_operation(*scopes, check_exists=True)
         self._execute(operation, new_cursor=True, commit=True)
 
-    @abstractmethod
     def _get_all_tables_in_db(self) -> List[str]:
         """
         Get all tables in the database, used when init scopes.
         """
+        operation = self.sql_builder.build_select_all_table_operation()
+        # first is table name
+        return [x[0] for x in self._execute(operation, fetch_size='all')]
 
     @abstractmethod
     def _get_table_columns(self, table: str) -> List[Dict[str, Any]]:
@@ -388,7 +397,7 @@ class RelationalDbCache(Cache, ABC):
         """
         Some api not allow executemany(), in this case, overwrite this method.
         """
-        cursor.executemany(operation.template, operation.parameters)
+        cursor.executemany(operation.statement, operation.parameters)
 
     def _execute(self, operation: Union[str, Operation], cursor=None, new_cursor=False, auto_close_cursor=False,
                  fetch_size: _FETCH_SIZE_TYPE = None, commit=False) -> Any:
@@ -401,7 +410,7 @@ class RelationalDbCache(Cache, ABC):
         :param commit:          do commit to database or not
         """
         if isinstance(operation, str):
-            operation = Operation(template=operation)
+            operation = Operation(statement=operation)
         if cursor is None:
             cursor = self.cursor
         elif cursor == 'new':
@@ -409,7 +418,7 @@ class RelationalDbCache(Cache, ABC):
         if operation.many:
             self._execute_many0(cursor, operation)
         else:
-            cursor.execute(operation.template, operation.parameters)
+            cursor.execute(operation.statement, operation.parameters)
         result = self._fetch_data(cursor, size=fetch_size)
         if commit:
             self.conn.commit()

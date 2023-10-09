@@ -8,4 +8,5 @@ from .core import (
     TextFileCache, SimpleTextFileCache,
     MiddleCache,
 )
-from .db import SqliteCache, SqliteScopeConfig
+from .db import *
+from .redis import RedisCache

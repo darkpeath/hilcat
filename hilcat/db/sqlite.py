@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
 
-"""
-Sqlite can be used as a cache or a persistence storage.
-Actually, implement a cache is enough.
-"""
-
 from typing import (
     Any, Dict, List,
 )
 import sqlite3
 from .relational import (
     RelationalDbScopeConfig,
-    RelationalDbCache, Operation
+    RelationalDbCache,
+    Operation,
+    QmarkSqlBuilder,
 )
+
+class SqliteSqlBuilder(QmarkSqlBuilder):
+    def build_select_all_table_operation(self) -> Operation:
+        return Operation(statement="SELECT name FROM sqlite_master WHERE type = 'table'")
 
 class SqliteScopeConfig(RelationalDbScopeConfig):
     def get_column_type(self, col: str) -> str:
@@ -24,10 +25,8 @@ class SqliteCache(RelationalDbCache):
     """
 
     api_module = sqlite3
-
-    def _get_all_tables_in_db(self) -> List[str]:
-        # first is table name
-        return [x[0] for x in self._execute("SELECT name FROM sqlite_master WHERE type = 'table'", fetch_size='all')]
+    paramstyle = 'qmark'
+    sql_builder = SqliteSqlBuilder()
 
     def _get_table_columns(self, table: str) -> List[Dict[str, Any]]:
         columns = list(self._execute(f"PRAGMA table_info({table})", fetch_size='all'))
@@ -41,6 +40,7 @@ class SqliteCache(RelationalDbCache):
         # if executemany, no parameters should be given
         if operation.parameters:
             raise ValueError("there should be no parameters when invoke executemany()")
-        stmts = operation.template.split(";")
+        # if semicolon in a stmt, it should be quoted
+        stmts = operation.statement.split(";")
         for stmt in stmts:
-            cursor.execute(stmt)
+            cursor.execute(stmt.strip())
