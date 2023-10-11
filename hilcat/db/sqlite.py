@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 
-from typing import (
-    Any, Dict, List,
-)
-import sqlite3
+from typing import List
 from .relational import (
     RelationalDbScopeConfig,
     RelationalDbCache,
     Operation,
     QmarkSqlBuilder,
 )
+import sqlite3
 
 class SqliteSqlBuilder(QmarkSqlBuilder):
     def build_select_all_table_operation(self) -> Operation:
         return Operation(statement="SELECT name FROM sqlite_master WHERE type = 'table'")
+
+    def build_select_table_columns_operation(self, table: str, filter_uniq=False) -> Operation:
+        return Operation(statement=f"PRAGMA table_info({table})")
 
 class SqliteScopeConfig(RelationalDbScopeConfig):
     def get_column_type(self, col: str) -> str:
@@ -28,13 +29,17 @@ class SqliteCache(RelationalDbCache):
     paramstyle = 'qmark'
     sql_builder = SqliteSqlBuilder()
 
-    def _get_table_columns(self, table: str) -> List[Dict[str, Any]]:
-        columns = list(self._execute(f"PRAGMA table_info({table})", fetch_size='all'))
-        assert len(columns[0]) == 6
-        return [{
-            "name": x[1],       # second is column name
-            "is_primary_key": x[5] > 0,
-        } for x in columns]
+    def _get_table_column_names(self, table: str) -> List[str]:
+        columns = self._get_table_columns(table)
+        # second is column name
+        return [x[1] for x in columns]
+
+    def _get_unique_column_name(self, table: str) -> str:
+        columns = self._get_table_columns(table)
+        columns = [x for x in columns if x[5] > 0]
+        if len(columns) != 1:
+            raise ValueError(f"There should be exactly one uniq column, but {len(columns)} has given.")
+        return columns[1][0]
 
     def _execute_many0(self, cursor, operation: Operation):
         # if executemany, no parameters should be given

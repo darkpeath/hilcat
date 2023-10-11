@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 
+import os
 from hilcat import SqliteCache, SqliteScopeConfig
 
 def test_sqlite():
-    cache = SqliteCache(database="t.db", scopes=[
+    db_file = "t.db"
+    if os.path.exists(db_file):
+        os.remove(db_file)
+    cache = SqliteCache(database=db_file, scopes=[
         SqliteScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
                           column_types={'count': 'int'}),
         SqliteScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])

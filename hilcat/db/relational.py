@@ -10,6 +10,7 @@ from typing import (
     Optional, List,
     Sequence, Callable,
     Literal, Union,
+    Tuple,
 )
 from abc import ABC, abstractmethod
 from types import ModuleType
@@ -63,6 +64,15 @@ class SqlBuilder(ABC):
         """
         Generate sql to select all tables in the database.
         Table name as first selected column.
+        """
+        raise NotImplementedError()
+
+    def build_select_table_columns_operation(self, table: str, filter_uniq=False) -> Operation:
+        """
+        Generate sql to select all columns for given table.
+        Column name as first selected result.
+        :param table:           the queried table
+        :param filter_uniq:     return only id column
         """
         raise NotImplementedError()
 
@@ -265,6 +275,7 @@ class RelationalDbCache(Cache, ABC):
     paramstyle: Literal['qmark', 'numeric', 'named', 'format', 'pyformat']
 
     # how to build fetch, update and delete sql
+    # all sql required by cache should be generated from the builder
     sql_builder: SqlBuilder
 
     def __init_subclass__(cls):
@@ -316,23 +327,45 @@ class RelationalDbCache(Cache, ABC):
         self._tables[config.table] = config
 
     def _create_table_if_not_exists(self, *scopes: RelationalDbScopeConfig):
-        operation = self.sql_builder.build_create_table_operation(*scopes, check_exists=True)
-        self._execute(operation, new_cursor=True, commit=True)
+        operations = [self.sql_builder.build_create_table_operation(config, check_exists=True)
+                      for config in scopes]
+        self._execute(*operations, cursor='new', commit=True)
 
-    def _get_all_tables_in_db(self) -> List[str]:
+    def _get_all_table_names_in_db(self) -> List[str]:
         """
         Get all tables in the database, used when init scopes.
         """
         operation = self.sql_builder.build_select_all_table_operation()
-        # first is table name
+        # assume first is table name
         return [x[0] for x in self._execute(operation, fetch_size='all')]
 
-    @abstractmethod
-    def _get_table_columns(self, table: str) -> List[Dict[str, Any]]:
+    def _get_table_columns(self, table: str) -> List[Tuple[Any]]:
         """
         Get columns for given table.
-        :return:    name and is_primary_key is needed
+        :return:    column names
         """
+        operation = self.sql_builder.build_select_table_columns_operation(table)
+        columns = self._execute(operation, fetch_size='all')
+        return list(columns)
+
+    def _get_table_column_names(self, table: str) -> List[str]:
+        """
+        Get column names for given table.
+        """
+        columns = self._get_table_columns(table)
+        # assume first result is column name.
+        return [x[0] for x in columns]
+
+    def _get_unique_column_name(self, table: str) -> str:
+        """
+        Get uniq column name for given table.
+        """
+        operation = self.sql_builder.build_select_table_columns_operation(table, filter_uniq=True)
+        columns = self._execute(operation, fetch_size='all')
+        if len(columns) != 1:
+            raise ValueError(f"There should be exactly one uniq column, but {len(columns)} has given.")
+        # assume first result is column name.
+        return columns[0][0]
 
     def _init_scopes(self, scopes: List[RelationalDbScopeConfig], all_table_as_scope: bool):
         # if some scopes have given, add to the scope mapper
@@ -345,7 +378,7 @@ class RelationalDbCache(Cache, ABC):
         # find tables in database, if table not configured, add to the scope mapper
         if all_table_as_scope:
             # select all tables
-            tables = self._get_all_tables_in_db()
+            tables = self._get_all_table_names_in_db()
 
             # table should not bound to a scope, and should not be same as a scope, remove these tables
             tables = [x[0] for x in tables if x[0] not in self._tables and x[0] not in self._scopes]
@@ -353,14 +386,12 @@ class RelationalDbCache(Cache, ABC):
             # for retain tables, add to the cache
             for table in tables:
                 columns = self._get_table_columns(table)
-                primary_keys = [x for x in columns if x.get('is_primary_key')]
-                if len(primary_keys) != 1:
-                    raise ValueError("there should exactly one primary key column")
+                uniq_column = self._get_unique_column_name(table)
                 self._add_scope(RelationalDbScopeConfig(
                     scope=table,    # use table name as scope
                     table=table,
-                    uniq_column=primary_keys[0]['name'],     # primary key column as id
-                    columns=[x['name'] for x in columns],    # second is column name
+                    uniq_column=uniq_column,     # uniq column as id
+                    columns=columns,
                 ))
 
     def _get_scope_config(self, scope: str) -> RelationalDbScopeConfig:
@@ -399,26 +430,27 @@ class RelationalDbCache(Cache, ABC):
         """
         cursor.executemany(operation.statement, operation.parameters)
 
-    def _execute(self, operation: Union[str, Operation], cursor=None, new_cursor=False, auto_close_cursor=False,
+    def _execute(self, *operations: Union[str, Operation], cursor=None, auto_close_cursor=False,
                  fetch_size: _FETCH_SIZE_TYPE = None, commit=False) -> Any:
         """
         Execute sql and fetch result.
-        :param operation:       an operation, same as described in pep-0249
+        :param operations:      sequence of operation, same as described in pep-0249
         :param cursor:          if given, use it; if 'new', create a new cursor; if not given, use global
         :param auto_close_cursor:   close cursor in the end, should not set when fetch data
         :param fetch_size:      how many rows should return
         :param commit:          do commit to database or not
         """
-        if isinstance(operation, str):
-            operation = Operation(statement=operation)
         if cursor is None:
             cursor = self.cursor
         elif cursor == 'new':
             cursor = self.conn.cursor()
-        if operation.many:
-            self._execute_many0(cursor, operation)
-        else:
-            cursor.execute(operation.statement, operation.parameters)
+        for operation in operations:
+            if isinstance(operation, str):
+                operation = Operation(statement=operation)
+            if operation.many:
+                self._execute_many0(cursor, operation)
+            else:
+                cursor.execute(operation.statement, operation.parameters)
         result = self._fetch_data(cursor, size=fetch_size)
         if commit:
             self.conn.commit()
@@ -457,14 +489,14 @@ class RelationalDbCache(Cache, ABC):
             row = {config.uniq_column: key}
             row.update((name, value[name]) for name in config.columns if name in value)
         operation = self.sql_builder.build_update_operation(config=config, key=key, value=row)
-        self._execute(operation, new_cursor=True, auto_close_cursor=True, commit=True)
+        self._execute(operation, cursor='new', auto_close_cursor=True, commit=True)
         return True
 
     def pop(self, key: str, scope: str = None, **kwargs) -> None:
         self._check_key(key)
         config = self._get_scope_config(scope)
         operation = self.sql_builder.build_delete_operation(config=config, key=key)
-        self._execute(operation, new_cursor=True, auto_close_cursor=True, commit=True)
+        self._execute(operation, cursor='new', auto_close_cursor=True, commit=True)
 
     def scopes(self) -> Iterable[str]:
         return self._scopes.keys()
