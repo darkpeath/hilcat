@@ -16,3 +16,9 @@ from .sqlite import (
     SqliteScopeConfig,
     SqliteCache,
 )
+from .postgresql import (
+    PostgresqlBuilder,
+    PostgresqlScopeConfig,
+    PostgresqlCache,
+)
+
