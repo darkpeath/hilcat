@@ -84,7 +84,7 @@ class SqlBuilder(ABC):
         """
 
     @abstractmethod
-    def build_select_operation(self, config: RelationalDbScopeConfig, key: str = None, limit: int = -1,
+    def build_select_operation(self, config: RelationalDbScopeConfig, key: _KEY_TYPE = None, limit: int = -1,
                                select_columns: Sequence[str] = None) -> Operation:
         """
         Generate sql to select row for given key.
@@ -95,7 +95,8 @@ class SqlBuilder(ABC):
         """
 
     @abstractmethod
-    def build_update_operation(self, config: RelationalDbScopeConfig, key: str, value: Dict[str, Any]) -> Operation:
+    def build_update_operation(self, config: RelationalDbScopeConfig,
+                               key: _KEY_TYPE, value: Dict[str, Any]) -> Operation:
         """
         Generate sql to update or insert row for given key with given value.
         :param config:      scope configuration
@@ -104,7 +105,7 @@ class SqlBuilder(ABC):
         """
 
     @abstractmethod
-    def build_delete_operation(self, config: RelationalDbScopeConfig, key: str = None) -> Operation:
+    def build_delete_operation(self, config: RelationalDbScopeConfig, key: _KEY_TYPE = None) -> Operation:
         """
         Generate sql to delete row for given key.
         :param config:      scope configuration
@@ -172,7 +173,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             return list(variable_values.values())
         return variable_values
 
-    def build_select_operation(self, config: RelationalDbScopeConfig, key: str = None, limit: int = -1,
+    def build_select_operation(self, config: RelationalDbScopeConfig, key: _KEY_TYPE = None, limit: int = -1,
                                select_columns: Sequence[str] = None) -> Operation:
         if select_columns is None:
             select_columns = config.columns_with_id
@@ -188,20 +189,44 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             stmt += f" LIMIT {limit}"
         return Operation(statement=stmt, parameters=self.normalize_variable_values(variable_values))
 
-    def build_update_operation(self, config: RelationalDbScopeConfig, key: str, value: Dict[str, Any]) -> Operation:
+    def _gen_update_statement(self, config, value: Dict[str, Any]) -> Tuple[str, bool]:
+        """
+        Generate statement for Operation, data of uniq column have added to value.
+        :return:    (statement, many or not)
+        """
         # sql is writen based of syntax of sqlite, maybe is incapable with other database
         first = ','.join(self.config_variable(name=k, order=i, value=v)
                          for i, (k, v) in enumerate(value.items(), 1))
         second = ','.join(f'{k}={self.config_variable(name=k, order=i, value=v)}'
                           for i, (k, v) in enumerate(value.items(), 1))
-        stmt = (f"INSERT INTO {config.scope}({','.join(value.keys())})"
+        return (f"INSERT INTO {config.scope}({','.join(value.keys())})"
                 f" VALUES ({first})"
                 f" ON CONFLICT({config.uniq_column}) DO UPDATE"
-                f" SET {second}")
-        parameters = self.normalize_variable_values(variable_values=value, variable_names=list(value.keys()) * 2)
-        return Operation(statement=stmt, parameters=parameters)
+                f" SET {second}"), False
 
-    def build_delete_operation(self, config: RelationalDbScopeConfig, key: str = None) -> Operation:
+    def _gen_update_variables(self, value: Dict[str, Any]) -> Tuple[Dict[str, Any], Sequence[str]]:
+        """
+        Generate variable values and name list used when execute().
+        :param value:   value with uniq column
+        :return:    (variable_values, variable_name_list)
+        """
+        return value, list(value.keys()) * 2
+
+    def build_update_operation(self, config: RelationalDbScopeConfig,
+                               key: _KEY_TYPE, value: Dict[str, Any]) -> Operation:
+        # if uniq column not in value, add it
+        if config.uniq_column not in value:
+            value = dict(value)
+            value[config.uniq_column] = key
+
+        # gen statement and parameters
+        stmt, many = self._gen_update_statement(config=config, value=value)
+        variable_values, variable_names = self._gen_update_variables(value)
+        parameters = self.normalize_variable_values(variable_values, variable_names)
+
+        return Operation(statement=stmt, parameters=parameters, many=many)
+
+    def build_delete_operation(self, config: RelationalDbScopeConfig, key: _KEY_TYPE = None) -> Operation:
         stmt = f"DELETE FROM {config.scope}"
         variable_values = {}
         if key is not None:
