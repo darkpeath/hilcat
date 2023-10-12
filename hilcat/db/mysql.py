@@ -3,15 +3,12 @@
 from typing import (
     Dict, Any, Tuple,
 )
+from abc import ABC, abstractmethod
 from .relational import (
     FormatSqlBuilder,
     RelationalDbScopeConfig,
     RelationalDbCache, Operation,
 )
-try:
-    import mysql.connector as mysql_connector
-except ImportError:
-    import pymysql as mysql_connector
 
 class MysqlSqlBuilder(FormatSqlBuilder):
 
@@ -37,17 +34,24 @@ class MysqlSqlBuilder(FormatSqlBuilder):
                 f" VALUES ({first})"
                 f" ON DUPLICATE KEY"
                 f" UPDATE {second}"), False
+
 class MysqlScopeConfig(RelationalDbScopeConfig):
     def get_column_type(self, col: str) -> str:
         return self.column_types.get(col, 'text')
 
-class MysqlCache(RelationalDbCache):
+class BaseBackend(RelationalDbCache, ABC):
     """
     Use mysql database as backend.
     """
-
-    api_module = mysql_connector
+    paramstyle = 'format'
     sql_builder = MysqlSqlBuilder()
+
+    @abstractmethod
+    def _connect_db0(self, **kwargs):
+        """
+        The actual method to connect database .
+        """
+        pass
 
     def connect_db(self, database: str = None, connect_args: Dict[str, Any] = None):
         kwargs = dict(connect_args or {})
@@ -55,7 +59,7 @@ class MysqlCache(RelationalDbCache):
             # TODO 2023/10/12  parse uri
             import warnings
             warnings.warn("uri is ignored")
-        return self.api_module.connect(**kwargs)
+            return self._connect_db0(**kwargs)
 
     def _get_unique_column_name(self, table: str) -> str:
         operation = self.sql_builder.build_select_table_columns_operation(table, filter_uniq=True)
@@ -64,4 +68,21 @@ class MysqlCache(RelationalDbCache):
             raise ValueError(f"There should be exactly one uniq column, but {len(columns)} has given.")
         # 4th is column name.
         return columns[0][4]
+
+class PymysqlBackend(BaseBackend):
+    def _connect_db0(self, **kwargs):
+        import pymysql
+        return pymysql.connect(**kwargs)
+
+class MysqlConnectorBackend(BaseBackend):
+    def _connect_db0(self, **kwargs):
+        import mysql.connector
+        return mysql.connector.connect(**kwargs)
+
+try:
+    import pymysql
+    MysqlCache = PymysqlBackend
+except ImportError:
+    import mysql.connector
+    MysqlCache = MysqlConnectorBackend
 

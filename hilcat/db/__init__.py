@@ -25,4 +25,13 @@ try:
 except ImportError:
     # psycopg maybe not installed
     pass
+try:
+    from .mysql import (
+        MysqlSqlBuilder,
+        MysqlScopeConfig,
+        MysqlCache,
+    )
+except ImportError:
+    # pymysql or mysql.connector should be installed
+    pass
 
