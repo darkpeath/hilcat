@@ -16,9 +16,13 @@ from .sqlite import (
     SqliteScopeConfig,
     SqliteCache,
 )
-from .postgresql import (
-    PostgresqlBuilder,
-    PostgresqlScopeConfig,
-    PostgresqlCache,
-)
+try:
+    from .postgresql import (
+        PostgresqlBuilder,
+        PostgresqlScopeConfig,
+        PostgresqlCache,
+    )
+except ImportError:
+    # psycopg maybe not installed
+    pass
 
