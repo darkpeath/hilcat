@@ -19,6 +19,7 @@ from ..core import Cache
 
 _FETCH_SIZE_TYPE = Union[Literal['one', 'all'], int]
 _EXECUTE_PARAM_TYPE = Union[Sequence[Any], Dict[str, Any]]
+_KEY_TYPE = Union[str, int]
 
 @dataclasses.dataclass
 class RelationalDbScopeConfig:
@@ -468,17 +469,17 @@ class RelationalDbCache(Cache, ABC):
             cursor.close()
         return result
 
-    def _check_key(self, key: str):
+    def _check_key(self, key: _KEY_TYPE):
         if key is None:
             raise ValueError("Arg key should not be None.")
 
-    def exists(self, key: str, scope: str = None, **kwargs) -> bool:
+    def exists(self, key: _KEY_TYPE, scope: str = None, **kwargs) -> bool:
         self._check_key(key)
         config = self._get_scope_config(scope)
         operation = self.sql_builder.build_select_operation(config=config, key=key, limit=1)
         return self._execute(operation, fetch_size=1) is not None
 
-    def fetch(self, key: str, default: Any = None, scope: Any = None, **kwargs) -> Optional[Dict[str, Any]]:
+    def fetch(self, key: _KEY_TYPE, default: Any = None, scope: Any = None, **kwargs) -> Optional[Dict[str, Any]]:
         self._check_key(key)
         config = self._get_scope_config(scope)
         operation = self.sql_builder.build_select_operation(config=config, key=key, limit=1)
@@ -487,7 +488,7 @@ class RelationalDbCache(Cache, ABC):
             return default
         return dict(zip(config.columns, row))
 
-    def set(self, key: str, value: Dict[str, Any], scope: Any = None, **kwargs) -> bool:
+    def set(self, key: _KEY_TYPE, value: Dict[str, Any], scope: Any = None, **kwargs) -> bool:
         self._check_key(key)
         config = self._get_scope_config(scope)
         if config.uniq_column in value:
@@ -501,7 +502,7 @@ class RelationalDbCache(Cache, ABC):
         self._execute(operation, cursor='new', auto_close_cursor=True, commit=True)
         return True
 
-    def pop(self, key: str, scope: str = None, **kwargs) -> None:
+    def pop(self, key: _KEY_TYPE, scope: str = None, **kwargs) -> None:
         self._check_key(key)
         config = self._get_scope_config(scope)
         operation = self.sql_builder.build_delete_operation(config=config, key=key)
@@ -513,4 +514,4 @@ class RelationalDbCache(Cache, ABC):
     def keys(self, scope: str = None) -> Iterable[str]:
         config = self._get_scope_config(scope)
         operation = self.sql_builder.build_select_operation(config=config, key=None)
-        return self._execute(operation, fetch_size='all', new_cursor=True)
+        return self._execute(operation, fetch_size='all', cursor='new')
