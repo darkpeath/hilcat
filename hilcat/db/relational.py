@@ -269,7 +269,8 @@ class RelationalDbCache(Cache, ABC):
     It's recommended to use a string as key, but other type such as int is also allowed.
     """
 
-    api_module: ModuleType   # for a certain database, api module should given
+    # if given api_module, use the module to connect
+    api_module: ModuleType
 
     # parameter marker format described in pep-0249
     paramstyle: Literal['qmark', 'numeric', 'named', 'format', 'pyformat']
@@ -293,6 +294,14 @@ class RelationalDbCache(Cache, ABC):
                 raise ValueError(f"Wrong paramstyle: {cls.paramstyle}")
             cls.sql_builder = DEFAULT_SQL_BUILDERS[cls.paramstyle]
 
+    def connect_db(self, database: str = None, connect_args: Dict[str, Any] = None):
+        """
+        Connect to a database, return a connection object described in pep-0249.
+
+        If always given a connection when init, this method may never run.
+        """
+        return self.api_module.connect(database, **(connect_args or {}))
+
     def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
                  scopes: List[RelationalDbScopeConfig] = None,
                  new_scope_config: Callable[[str], RelationalDbScopeConfig] = None,
@@ -306,7 +315,7 @@ class RelationalDbCache(Cache, ABC):
         :param new_scope_config:    when a new scope given, how to config it
         :param all_table_as_scope:  if `True`, add all table in database to scopes
         """
-        self.conn = connection or self.api_module.connect(database, **(connect_args or {}))
+        self.conn = connection or self.connect_db(database, connect_args)
         self.cursor = self.conn.cursor()
         self._scopes = {}   # scope -> config
         self._tables = {}   # table -> config, should correspond to _scopes
