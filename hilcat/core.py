@@ -14,6 +14,7 @@ from abc import (
 )
 import os
 import pathlib
+import warnings
 
 class Storage(ABC):
     """
@@ -85,18 +86,6 @@ class Storage(ABC):
         :return:    Value in the cache if arg return_value is `True`.
         """
 
-    def load(self, scopes: Iterable[Any] = None, **kwargs):
-        """
-        Load scope data from persistence storage.
-        """
-
-    def save(self, scopes: Iterable[Any] = None, **kwargs):
-        """
-        Save scope data to persistence storage.
-
-        If cache is just a temp storage, this method should be implemented.
-        """
-
     def scopes(self) -> Iterable[Any]:
         """
         Get all scopes in the cache.
@@ -119,12 +108,17 @@ class Cache(Storage, ABC):
         Load scope data from persistence storage.
         """
 
-    def save(self, scopes: Iterable[Any] = None, **kwargs):
+    def backup(self, scopes: Iterable[Any] = None, **kwargs):
         """
         Save scope data to persistence storage.
 
         If cache is just a temp storage, this method should be implemented.
         """
+
+    def save(self, scopes: Iterable[Any] = None, **kwargs):
+        # backup has no ambiguity, save is going to be deprecated
+        warnings.warn("use backup() instead", DeprecationWarning)
+        self.backup(scopes, **kwargs)
 
 class NoOpCache(Cache):
     """
@@ -342,7 +336,7 @@ class MiddleCache(Cache, ABC):
         Get values for given scope.
         """
 
-    def save(self, scopes: Iterable[Any] = None, **kwargs):
+    def backup(self, scopes: Iterable[Any] = None, **kwargs):
         if scopes is None:
             scopes = self.scopes()
         for scope in scopes:
