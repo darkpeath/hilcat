@@ -465,13 +465,13 @@ class RelationalDbCache(Cache, ABC):
         """
         cursor.executemany(operation.statement, operation.parameters)
 
-    def _execute(self, *operations: Union[str, Operation], cursor=None, auto_close_cursor=True,
+    def _execute(self, *operations: Union[str, Operation], cursor='new', auto_close_cursor=True,
                  fetch_size: _FETCH_SIZE_TYPE = None, commit=False) -> Any:
         """
         Execute sql and fetch result.
         :param operations:      sequence of operation, same as described in pep-0249
-        :param cursor:          if given, use it; if 'new', create a new cursor; if not given, use global
-        :param auto_close_cursor:   close cursor in the end, should not set when fetch data
+        :param cursor:          if `None`, use global; if 'new', create a new cursor; else, use the given cursor
+        :param auto_close_cursor:   close cursor in the end
         :param fetch_size:      how many rows should return
         :param commit:          do commit to database or not
         """
