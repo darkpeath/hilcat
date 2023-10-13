@@ -39,7 +39,7 @@ class SqliteCache(RelationalDbCache):
         columns = [x for x in columns if x[5] > 0]
         if len(columns) != 1:
             raise ValueError(f"There should be exactly one uniq column, but {len(columns)} has given.")
-        return columns[1][0]
+        return columns[0][1]
 
     def _execute_many0(self, cursor, operation: Operation):
         # if executemany, no parameters should be given

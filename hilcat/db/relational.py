@@ -420,7 +420,7 @@ class RelationalDbCache(Cache, ABC):
 
             # for retain tables, add to the cache
             for table in tables:
-                columns = self._get_table_columns(table)
+                columns = self._get_table_column_names(table)
                 uniq_column = self._get_unique_column_name(table)
                 self._add_scope(RelationalDbScopeConfig(
                     scope=table,    # use table name as scope
