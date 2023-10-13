@@ -465,7 +465,7 @@ class RelationalDbCache(Cache, ABC):
         """
         cursor.executemany(operation.statement, operation.parameters)
 
-    def _execute(self, *operations: Union[str, Operation], cursor=None, auto_close_cursor=False,
+    def _execute(self, *operations: Union[str, Operation], cursor=None, auto_close_cursor=True,
                  fetch_size: _FETCH_SIZE_TYPE = None, commit=False) -> Any:
         """
         Execute sql and fetch result.
@@ -475,10 +475,12 @@ class RelationalDbCache(Cache, ABC):
         :param fetch_size:      how many rows should return
         :param commit:          do commit to database or not
         """
+        close_cursor = False
         if cursor is None:
             cursor = self.cursor
         elif cursor == 'new':
             cursor = self.conn.cursor()
+            close_cursor = auto_close_cursor
         for operation in operations:
             if isinstance(operation, str):
                 operation = Operation(statement=operation)
@@ -489,7 +491,7 @@ class RelationalDbCache(Cache, ABC):
         result = self._fetch_data(cursor, size=fetch_size)
         if commit:
             self.conn.commit()
-        if cursor == 'new' and auto_close_cursor:
+        if close_cursor:
             # close the cursor if it's created in this method
             cursor.close()
         return result
