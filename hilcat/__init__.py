@@ -9,4 +9,11 @@ from .core import (
     MiddleCache,
 )
 from .db import *
-from .redis import RedisCache
+try:
+    from .redis import RedisCache
+except ImportError:
+    pass
+try:
+    from .es import ElasticSearchCache
+except ImportError:
+    pass
