@@ -23,7 +23,7 @@ _KEY_TYPE = Union[str, int]
 
 @dataclasses.dataclass
 class RelationalDbScopeConfig:
-    scope: str
+    scope: Any = None
     table: str = None
     uniq_column: str = 'id'     # unique column to identify rows
     columns: Sequence[str] = ('id', 'data')
@@ -37,8 +37,14 @@ class RelationalDbScopeConfig:
             self.columns_with_id = list(self.columns)
         else:
             self.columns_with_id = [self.uniq_column] + list(self.columns)
+        if not self.scope and not self.table:
+            raise ValueError("Arg scope or table must given.")
         if not self.table:
+            if not isinstance(self.scope, str):
+                raise ValueError("Arg scope must be a str when table not given.")
             self.table = self.scope
+        if not self.scope:
+            self.scope = self.table
 
     def get_column_type(self, col: str) -> str:
         # this method should be overwritten for certain database
@@ -179,7 +185,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             select_columns = config.columns_with_id
         elif isinstance(select_columns, str):
             select_columns = [select_columns]
-        stmt = f"SELECT {','.join(select_columns)} FROM {config.scope}"
+        stmt = f"SELECT {','.join(select_columns)} FROM {config.table}"
         variable_values = {}
         if key is not None:
             name = config.uniq_column
@@ -189,7 +195,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             stmt += f" LIMIT {limit}"
         return Operation(statement=stmt, parameters=self.normalize_variable_values(variable_values))
 
-    def _gen_update_statement(self, config, value: Dict[str, Any]) -> Tuple[str, bool]:
+    def _gen_update_statement(self, config: RelationalDbScopeConfig, value: Dict[str, Any]) -> Tuple[str, bool]:
         """
         Generate statement for Operation, data of uniq column have added to value.
         :return:    (statement, many or not)
@@ -199,7 +205,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
                          for i, (k, v) in enumerate(value.items(), 1))
         second = ','.join(f'{k}={self.config_variable(name=k, order=i, value=v)}'
                           for i, (k, v) in enumerate(value.items(), 1))
-        return (f"INSERT INTO {config.scope}({','.join(value.keys())})"
+        return (f"INSERT INTO {config.table}({','.join(value.keys())})"
                 f" VALUES ({first})"
                 f" ON CONFLICT({config.uniq_column}) DO UPDATE"
                 f" SET {second}"), False
@@ -227,7 +233,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
         return Operation(statement=stmt, parameters=parameters, many=many)
 
     def build_delete_operation(self, config: RelationalDbScopeConfig, key: _KEY_TYPE = None) -> Operation:
-        stmt = f"DELETE FROM {config.scope}"
+        stmt = f"DELETE FROM {config.table}"
         variable_values = {}
         if key is not None:
             placeholder = self.config_variable(name=config.uniq_column, order=1, value=key,

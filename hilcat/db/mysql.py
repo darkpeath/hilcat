@@ -25,12 +25,12 @@ class MysqlSqlBuilder(FormatSqlBuilder):
             stmt = f"DESCRIBE {table}"
         return Operation(statement=stmt)
 
-    def _gen_update_statement(self, config, value: Dict[str, Any]) -> Tuple[str, bool]:
+    def _gen_update_statement(self, config: 'MysqlScopeConfig', value: Dict[str, Any]) -> Tuple[str, bool]:
         first = ','.join(self.config_variable(name=k, order=i, value=v)
                          for i, (k, v) in enumerate(value.items(), 1))
         second = ','.join(f'{k}={self.config_variable(name=k, order=i, value=v)}'
                           for i, (k, v) in enumerate(value.items(), 1))
-        return (f"INSERT INTO {config.scope}({','.join(value.keys())})"
+        return (f"INSERT INTO {config.table}({','.join(value.keys())})"
                 f" VALUES ({first})"
                 f" ON DUPLICATE KEY"
                 f" UPDATE {second}"), False
