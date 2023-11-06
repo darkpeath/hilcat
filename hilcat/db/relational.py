@@ -10,7 +10,7 @@ from typing import (
     Optional, List,
     Sequence, Callable,
     Literal, Union,
-    Tuple,
+    Tuple, Hashable
 )
 from abc import ABC, abstractmethod
 from types import ModuleType
@@ -23,7 +23,7 @@ _KEY_TYPE = Union[str, int]
 
 @dataclasses.dataclass
 class RelationalDbScopeConfig:
-    scope: Any = None
+    scope: Hashable
     table: str = None
     uniq_column: str = 'id'     # unique column to identify rows
     columns: Sequence[str] = ('id', 'data')
@@ -37,14 +37,10 @@ class RelationalDbScopeConfig:
             self.columns_with_id = list(self.columns)
         else:
             self.columns_with_id = [self.uniq_column] + list(self.columns)
-        if not self.scope and not self.table:
-            raise ValueError("Arg scope or table must given.")
         if not self.table:
             if not isinstance(self.scope, str):
                 raise ValueError("Arg scope must be a str when table not given.")
             self.table = self.scope
-        if not self.scope:
-            self.scope = self.table
 
     def get_column_type(self, col: str) -> str:
         # this method should be overwritten for certain database
