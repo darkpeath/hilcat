@@ -415,13 +415,13 @@ class RelationalDbCache(Cache, ABC):
         # find tables in database, if table not configured, add to the scope mapper
         if all_table_as_scope:
             # select all tables
-            tables = self._get_all_table_names_in_db()
+            table_names = self._get_all_table_names_in_db()
 
             # table should not bound to a scope, and should not be same as a scope, remove these tables
-            tables = [x[0] for x in tables if x[0] not in self._tables and x[0] not in self._scopes]
+            table_names = [x for x in table_names if x not in self._tables and x not in self._scopes]
 
             # for retain tables, add to the cache
-            for table in tables:
+            for table in table_names:
                 columns = self._get_table_column_names(table)
                 uniq_column = self._get_unique_column_name(table)
                 self._add_scope(RelationalDbScopeConfig(
