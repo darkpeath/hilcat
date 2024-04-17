@@ -181,17 +181,17 @@ class LocalFileCache(Cache):
     Each key corresponds to a file.
     """
     @abstractmethod
-    def get_filepath(self, key: Any, scope: Any = None) -> str:
+    def _get_filepath(self, key: Any, scope: Any = None) -> str:
         """
         Get filepath for the given key to save value.
         """
 
     def exists(self, key: Any, scope: Any = None, **kwargs) -> bool:
-        filepath = self.get_filepath(key, scope=scope)
+        filepath = self._get_filepath(key, scope=scope)
         return os.path.exists(filepath)
 
     @abstractmethod
-    def read_file(self, filepath: str) -> Any:
+    def _read_file(self, filepath: str) -> Any:
         """
         Read file content.
         """
@@ -200,46 +200,46 @@ class LocalFileCache(Cache):
         """
         If file exists, read file content; else, return default.
         """
-        filepath = self.get_filepath(key, scope=scope)
+        filepath = self._get_filepath(key, scope=scope)
         if os.path.exists(filepath):
-            return self.read_file(filepath)
+            return self._read_file(filepath)
         return default
 
-    def write_file0(self, filepath: str, content: Any):
+    def _write_file0(self, filepath: str, content: Any):
         """
         The actual write file method.
         """
-        # Someone may overwrite write_file() and this method would not be called.
-        # If it's not necessary, there is no impact for raising and error.
+        # Someone may overwrite _write_file() and this method would not be called.
+        # If it's not necessary, there is no impact for raising an error.
         raise NotImplementedError()
 
-    def write_file(self, filepath: str, content: Any):
+    def _write_file(self, filepath: str, content: Any):
         """
         Write content to file.
         """
         # create parent dir first
         os.makedirs(os.path.abspath(os.path.dirname(filepath)), exist_ok=True)
-        self.write_file0(filepath, content)
+        self._write_file0(filepath, content)
 
     def set(self, key: Any, value: Any, scope: Any = None, **kwargs) -> bool:
-        filepath = self.get_filepath(key, scope=scope)
-        self.write_file(filepath, value)
+        filepath = self._get_filepath(key, scope=scope)
+        self._write_file(filepath, value)
         return True
 
     def update(self, key: Any, value: Any, scope: Any = None, return_old=False, **kwargs) -> Any:
-        filepath = self.get_filepath(key, scope=scope)
+        filepath = self._get_filepath(key, scope=scope)
         result = None
         if return_old and os.path.exists(filepath):
-            result = self.read_file(filepath)
-        self.write_file(filepath, value)
+            result = self._read_file(filepath)
+        self._write_file(filepath, value)
         return result
 
     def pop(self, key: Any, scope: Any = None, return_old=False, **kwargs) -> Any:
-        filepath = self.get_filepath(key, scope=scope)
+        filepath = self._get_filepath(key, scope=scope)
         result = None
         if os.path.exists(filepath):
             if return_old:
-                result = self.read_file(filepath)
+                result = self._read_file(filepath)
             os.remove(filepath)
         return result
 
@@ -247,11 +247,11 @@ class BinaryFileCache(LocalFileCache, ABC):
     """
     Each value stored in a binary file.
     """
-    def read_file(self, filepath: str) -> Any:
+    def _read_file(self, filepath: str) -> Any:
         with open(filepath, 'rb') as f:
             return f.read()
 
-    def write_file0(self, filepath: str, content: Any):
+    def _write_file0(self, filepath: str, content: Any):
         with open(filepath, 'wb') as f:
             f.write(content)
 
@@ -265,11 +265,11 @@ class TextFileCache(LocalFileCache, ABC):
         """
         self.encoding = encoding
 
-    def read_file(self, filepath: str) -> str:
+    def _read_file(self, filepath: str) -> str:
         with open(filepath, encoding=self.encoding) as f:
             return f.read()
 
-    def write_file0(self, filepath: str, content: str):
+    def _write_file0(self, filepath: str, content: str):
         with open(filepath, 'w', encoding=self.encoding) as f:
             f.write(content)
 
@@ -285,7 +285,7 @@ class SimpleLocalFileCache(LocalFileCache, ABC):
         self.root_dir = root_dir
         self.suf = suf
 
-    def get_filepath(self, key: str, scope: str = None) -> str:
+    def _get_filepath(self, key: str, scope: str = None) -> str:
         return os.path.join(self.root_dir, scope or '', key + self.suf)
 
     def keys(self, scope: Any = None) -> Iterable[str]:
@@ -293,7 +293,10 @@ class SimpleLocalFileCache(LocalFileCache, ABC):
         root = pathlib.Path(self.root_dir)
         for f in root.rglob("*" + self.suf):
             if f.is_file():
-                yield f.relative_to(root).as_posix()[:-len(self.suf)]
+                key = f.relative_to(root).as_posix()
+                if self.suf:
+                    key = key[:-len(self.suf)]
+                yield key
 
 class SimpleBinaryFileCache(SimpleLocalFileCache, BinaryFileCache):
     def __init__(self, root_dir: str, suf: str = ''):
