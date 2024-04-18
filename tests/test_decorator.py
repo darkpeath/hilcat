@@ -15,18 +15,12 @@ def test_decorator():
     @cache(scope="f1")
     def f1(x: int):
         c1[x] += 1
-        return {
-            # "x": x,
-            "y": x + 1 + c1[x],
-        }
+        return x + 1 + c1[x]
 
     c2 = collections.Counter()
     def f2(x: int):
         c2[x] += 1
-        return {
-            "x": x,
-            "y": x + 1 + c2[x],
-        }
+        return x + 1 + c2[x]
 
     def make_key(x: int, y: int):
         return '-'.join(map(str, [x, y]))
@@ -40,14 +34,12 @@ def test_decorator():
         }
 
     # with cache, same result
-    # assert f1(1) == {'x': 1, 'y': 3}
-    # assert f1(1) == {'x': 1, 'y': 3}
-    assert f1(1) == {'y': 3}
-    assert f1(1) == {'y': 3}
+    assert f1(1) == 3
+    assert f1(1) == 3
 
     # without cache, different result
-    assert f2(1) == {'x': 1, 'y': 3}
-    assert f2(1) == {'x': 1, 'y': 4}
+    assert f2(1) == 3
+    assert f2(1) == 4
 
     assert f3(1, 2) == {"key": "1-2", "value": 4}
     assert f3(1, 2) == {"key": "1-2", "value": 4}

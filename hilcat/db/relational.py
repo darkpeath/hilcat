@@ -7,10 +7,10 @@ Actually, implement a cache is enough.
 
 from typing import (
     Any, Iterable, Dict,
-    Optional, List,
+    List, Type,
     Sequence, Callable,
     Literal, Union,
-    Tuple, Hashable
+    Tuple, Hashable,
 )
 from abc import ABC, abstractmethod
 from types import ModuleType
@@ -21,26 +21,115 @@ _FETCH_SIZE_TYPE = Union[Literal['one', 'all'], int]
 _EXECUTE_PARAM_TYPE = Union[Sequence[Any], Dict[str, Any]]
 _KEY_TYPE = Union[str, int]
 
+class ValueAdapter(ABC):
+    """
+    Method `build_column_values` and `parse_column_values` should be reversed one-to-one mapping.
+    That is to say:
+        parse_column_values(build_column_values(x)) == x
+        build_column_values(parse_column_values(x)) == x
+    """
+    @abstractmethod
+    def build_column_values(self, value: Any) -> Dict[str, Any]:
+        """
+        Used in method `RelationalDbCache.set()` to build column values
+        """
+    @abstractmethod
+    def parse_column_values(self, value: Dict[str, Any]) -> Any:
+        """
+        Used in method `RelationalDbCache.fetch()` to parse column values.
+        """
+
+class DefaultAdapter(ValueAdapter):
+    """
+    Cache value should be exactly column values and thus nothing should do.
+    """
+
+    def build_column_values(self, value: Dict[str, Any]) -> Dict[str, Any]:
+        return value
+
+    def parse_column_values(self, value: Dict[str, Any]) -> Dict[str, Any]:
+        return value
+
+class SingleAdapter(ValueAdapter):
+    """
+    Cache value is exactly one column.
+    """
+
+    def __init__(self, col: str):
+        self.col = col
+
+    def build_column_values(self, value: Any) -> Dict[str, Any]:
+        return {self.col: value}
+
+    def parse_column_values(self, value: Dict[str, Any]) -> Any:
+        return value[self.col]
+
+class SequenceAdapter(ValueAdapter):
+    """
+    Cache value is a list or tuple, corresponding to some columns.
+    """
+
+    def __init__(self, cols: Sequence[str], return_type: Type[Union[list, tuple]] = tuple):
+        self.cols = cols
+        self.return_type = return_type
+
+    def build_column_values(self, value: Sequence[Any]) -> Dict[str, Any]:
+        return dict(zip(self.cols, value))
+
+    def parse_column_values(self, value: Dict[str, Any]) -> Sequence[Any]:
+        return self.return_type(map(value.get, self.cols))
+
 @dataclasses.dataclass
 class RelationalDbScopeConfig:
     scope: Hashable
     table: str = None
     uniq_column: str = 'id'     # unique column to identify rows
-    columns: Sequence[str] = ('id', 'data')
+    columns: Sequence[str] = ('data', )
     columns_with_id: List[str] = dataclasses.field(init=False)
 
     # if column not specified here, type should be str
     column_types: Dict[str, str] = dataclasses.field(default_factory=dict)
+
+    # convert value when fetch and set
+    value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto'
+
+    def _check_value_adapter(self, adapter) -> ValueAdapter:
+        if adapter == 'auto':
+            if len(self.columns) == 1:
+                return SingleAdapter(self.columns[0])
+            return DefaultAdapter()
+        elif adapter == 'default':
+            return DefaultAdapter()
+        elif adapter == 'single':
+            if len(self.columns) != 1:
+                raise ValueError(f"columns length should be 1 when value_adapter is 'single'.")
+            return SingleAdapter(self.columns[0])
+        elif adapter == 'tuple':
+            return SequenceAdapter(self.columns, return_type=tuple)
+        elif adapter == 'list':
+            return SequenceAdapter(self.columns, return_type=list)
+
+        if isinstance(adapter, ValueAdapter):
+            return adapter
+
+        if isinstance(adapter, str):
+            msg = f"Unexpected value_adapter: {adapter}"
+        else:
+            msg = f"Unexpected value_adapter type: {type(adapter)}"
+        raise ValueError(msg)
 
     def __post_init__(self):
         if self.uniq_column in self.columns:
             self.columns_with_id = list(self.columns)
         else:
             self.columns_with_id = [self.uniq_column] + list(self.columns)
+
         if not self.table:
             if not isinstance(self.scope, str):
                 raise ValueError("Arg scope must be a str when table not given.")
             self.table = self.scope
+
+        self.value_adapter = self._check_value_adapter(self.value_adapter)
 
     def get_column_type(self, col: str) -> str:
         # this method should be overwritten for certain database
@@ -512,7 +601,7 @@ class RelationalDbCache(Cache, ABC):
         )
         return self._execute(operation, fetch_size=1) is not None
 
-    def fetch(self, key: _KEY_TYPE, default: Any = None, scope: Any = None, **kwargs) -> Optional[Dict[str, Any]]:
+    def fetch(self, key: _KEY_TYPE, default: Any = None, scope: Any = None, **kwargs) -> Any:
         self._check_key(key)
         config = self._get_scope_config(scope)
         operation = self.sql_builder.build_select_operation(
@@ -522,11 +611,13 @@ class RelationalDbCache(Cache, ABC):
         row = self._execute(operation, fetch_size=1)
         if row is None:
             return default
-        return dict(zip(config.columns, row))
+        value = dict(zip(config.columns, row))
+        return config.value_adapter.parse_column_values(value)
 
-    def set(self, key: _KEY_TYPE, value: Dict[str, Any], scope: Any = None, **kwargs) -> bool:
+    def set(self, key: _KEY_TYPE, value: Any, scope: Any = None, **kwargs) -> bool:
         self._check_key(key)
         config = self._get_scope_config(scope)
+        value = config.value_adapter.build_column_values(value)
         if config.uniq_column in value:
             if key != value[config.uniq_column]:
                 raise ValueError(f"key {key} is different from value {value[config.uniq_column]}")
