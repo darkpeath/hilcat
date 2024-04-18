@@ -178,7 +178,8 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
     def build_select_operation(self, config: RelationalDbScopeConfig, key: _KEY_TYPE = None, limit: int = -1,
                                select_columns: Sequence[str] = None) -> Operation:
         if select_columns is None:
-            select_columns = config.columns_with_id
+            # only select configured columns; if id not configured, ignore it
+            select_columns = config.columns
         elif isinstance(select_columns, str):
             select_columns = [select_columns]
         stmt = f"SELECT {','.join(select_columns)} FROM {config.table}"
@@ -505,13 +506,19 @@ class RelationalDbCache(Cache, ABC):
     def exists(self, key: _KEY_TYPE, scope: str = None, **kwargs) -> bool:
         self._check_key(key)
         config = self._get_scope_config(scope)
-        operation = self.sql_builder.build_select_operation(config=config, key=key, limit=1)
+        operation = self.sql_builder.build_select_operation(
+            config=config, key=key, limit=1,
+            select_columns=[config.uniq_column],
+        )
         return self._execute(operation, fetch_size=1) is not None
 
     def fetch(self, key: _KEY_TYPE, default: Any = None, scope: Any = None, **kwargs) -> Optional[Dict[str, Any]]:
         self._check_key(key)
         config = self._get_scope_config(scope)
-        operation = self.sql_builder.build_select_operation(config=config, key=key, limit=1)
+        operation = self.sql_builder.build_select_operation(
+            config=config, key=key, limit=1,
+            select_columns=config.columns,
+        )
         row = self._execute(operation, fetch_size=1)
         if row is None:
             return default

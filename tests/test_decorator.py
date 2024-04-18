@@ -7,7 +7,7 @@ def test_decorator():
     if os.path.exists(db_file):
         os.remove(db_file)
     cache = SqliteCache(database=db_file, scopes=[
-        SqliteScopeConfig(scope='f1', uniq_column='x', columns=['x', 'y']),
+        SqliteScopeConfig(scope='f1', uniq_column='x', columns=['y']),
         SqliteScopeConfig(scope='f3', uniq_column='key', columns=['key', 'value'])
     ])
 
@@ -16,7 +16,7 @@ def test_decorator():
     def f1(x: int):
         c1[x] += 1
         return {
-            "x": x,
+            # "x": x,
             "y": x + 1 + c1[x],
         }
 
@@ -40,8 +40,10 @@ def test_decorator():
         }
 
     # with cache, same result
-    assert f1(1) == {'x': 1, 'y': 3}
-    assert f1(1) == {'x': 1, 'y': 3}
+    # assert f1(1) == {'x': 1, 'y': 3}
+    # assert f1(1) == {'x': 1, 'y': 3}
+    assert f1(1) == {'y': 3}
+    assert f1(1) == {'y': 3}
 
     # without cache, different result
     assert f2(1) == {'x': 1, 'y': 3}
