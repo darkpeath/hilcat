@@ -5,16 +5,50 @@ Core code for the high level abstract cache.
 """
 
 from typing import (
-    Any, Dict,
+    Any, Dict, List,
     Callable, Iterable,
-    Hashable,
+    Hashable, Optional,
+    Type,
 )
 from abc import (
     ABC, abstractmethod,
 )
 import os
+import sys
+import inspect
 import pathlib
 import warnings
+import builtins
+import functools
+
+def _create_fn(name: str, args: List[str], body: List[str], *,
+               _globals: Dict[str, Any] = None,
+               _locals: Dict[str, Any] = None,
+               return_type: Optional[Type] = None):
+    _globals = _globals or {}
+    # Note that we mutate locals when exec() is called.  Caller
+    # beware!  The only callers are internal to this module, so no
+    # worries about external callers.
+    if _locals is None:
+        _locals = {}
+    if 'BUILTINS' not in _locals:
+        _locals['BUILTINS'] = builtins
+    return_annotation = ''
+    if return_type is not None:
+        _locals['_return_type'] = return_type
+        return_annotation = '->_return_type'
+    args = ','.join(args)
+    body = '\n'.join(f'  {b}' for b in body)
+
+    # Compute the text of the entire function.
+    txt = f' def {name}({args}){return_annotation}:\n{body}'
+
+    local_vars = ', '.join(_locals.keys())
+    txt = f"def __create_fn__({local_vars}):\n{txt}\n return {name}"
+
+    ns = {}
+    exec(txt, _globals, ns)
+    return ns['__create_fn__'](**_locals)
 
 class Storage(ABC):
     """
@@ -97,6 +131,84 @@ class Storage(ABC):
         Get all keys in the cache.
         """
         raise NotImplementedError("It's not allowed to get all keys.")
+
+    def __call__(self, f=None, scope=None, ignore_first_arg=False, make_key_func=None, **kwargs):
+        """
+        Decorate function with a cache.
+        To cache result of the function.
+        :param f:           function to be decorated
+        :param scope:       scope for cache to get and set
+        :param ignore_first_arg:    whether to ignore function first arg when gen cache key;
+                                    if function is a class method, this can be set as `True`
+        :param make_key_func:   a function to gen key from arg values
+        """
+
+        def wrap(_f):
+            def get_var(var1: str, var2: str):
+                return var1 if var1 != _f.__name__ else var2
+
+            sig = inspect.signature(_f)
+            parameters = list(sig.parameters.keys())
+            if ignore_first_arg:
+                parameters = parameters[1:]
+            if len(parameters) == 0:
+                raise ValueError("Function consume no arg.")
+
+            has_kwargs = list(sig.parameters.values())[-1].kind.value == 5
+            make_key_var = get_var("_make_key", "__make_key")
+            make_key = make_key_func
+            if not make_key:
+                if len(parameters) == 1:
+                    if has_kwargs:
+                        def make_key(*args, **kwargs):
+                            bind = sig.bind(*args, **kwargs)
+                            return tuple(sorted(bind.arguments[parameters[0]].items()))
+                    else:
+                        def make_key(*args, **kwargs):
+                            bind = sig.bind(*args, **kwargs)
+                            return bind.arguments[parameters[0]]
+                else:
+                    if has_kwargs:
+                        def make_key(*args, **kwargs):
+                            bind = sig.bind(*args, **kwargs)
+                            return (tuple((x, bind.arguments[x]) for x in parameters[:-1]) +
+                                    tuple(sorted(bind.arguments[parameters[-1]].items())))
+                    else:
+                        def make_key(*args, **kwargs):
+                            bind = sig.bind(*args, **kwargs)
+                            return tuple(map(bind.arguments.get, parameters))
+
+            _globals = sys.modules[_f.__module__].__dict__
+            func_var = get_var("_func", "__func")
+            score_var = get_var("_scope", "_scope")
+            cache_var = get_var("_cache", "__cache")
+            _locals = {
+                "BUILTINS": builtins,
+                func_var: _f,
+                score_var: scope,
+                cache_var: self,
+                make_key_var: make_key,
+            }
+            args = ["*args", "**kwargs"]
+            body_lines = [
+                f"return {cache_var}.get({make_key_var}(*args, **kwargs),"
+                f" lambda: {func_var}(*args, **kwargs), scope={score_var})"
+            ]
+            return_type = _f.__annotations__.get('return')
+            func = _create_fn(_f.__name__, args, body_lines,
+                              _globals=_f.__globals__,
+                              _locals=_locals,
+                              return_type=return_type)
+            func = functools.update_wrapper(func, _f)
+            return func
+
+        # See if we're being called as @Cache() or @Cache()().
+        if f is None:
+            # We're called with 2 pair of parens.
+            return wrap
+
+        # We're called with 1 pair of parens.
+        return wrap(f)
 
 class Cache(Storage, ABC):
     """

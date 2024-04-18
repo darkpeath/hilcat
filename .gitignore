@@ -30,3 +30,6 @@ build/
 # package files
 dist/
 /hilcat/_dist_ver.py
+
+# data file
+*.db
