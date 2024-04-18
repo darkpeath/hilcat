@@ -251,7 +251,7 @@ class NoOpCache(Cache):
     def pop(self, key: Any, scope: Any = None, **kwargs) -> Any:
         return None
 
-class MemoryCache(Cache, ABC):
+class MemoryCache(Cache):
     """
     Use a dict as backend.
     """
