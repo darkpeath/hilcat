@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import re
 import warnings
 import dataclasses
 from typing import List
@@ -33,6 +34,12 @@ class SqliteCache(RelationalDbCache):
     api_module = sqlite3
     paramstyle = 'qmark'
     sql_builder = SqliteSqlBuilder()
+
+    @classmethod
+    def from_uri(cls, uri: str, **kwargs) -> 'RelationalDbCache':
+        assert re.match(r'\w+:///.+', uri), uri
+        schema, database = uri.split(':///')
+        return cls(database=database, **kwargs)
 
     def _get_table_column_names(self, table: str) -> List[str]:
         columns = self._get_table_columns(table)

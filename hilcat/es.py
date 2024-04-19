@@ -4,14 +4,22 @@ from typing import (
     Any, Iterable,
     Dict,
 )
-from .core import Cache
+from .core import RegistrableCache
 import elasticsearch as es
 
-class ElasticSearchCache(Cache):
+class ElasticSearchCache(RegistrableCache):
     """
     Use elasticsearch as backend.
     Each scope corresponds to an index, and each key corresponds to a document.
     """
+
+    @classmethod
+    def from_uri(cls, uri: str, **kwargs) -> 'ElasticSearchCache':
+        if not uri.startswith('es://'):
+            raise ValueError(f"It's not a es uri: {uri}.")
+        connect_args = kwargs.copy()
+        connect_args['hosts'] = uri[5:]
+        return cls(connect_args=connect_args)
 
     def __init__(self, client: es.Elasticsearch = None, connect_args: Dict[str, Any] = None):
         """

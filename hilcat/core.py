@@ -20,6 +20,7 @@ import pathlib
 import warnings
 import builtins
 import functools
+import urllib.parse
 
 def _create_fn(name: str, args: List[str], body: List[str], *,
                _globals: Dict[str, Any] = None,
@@ -215,6 +216,21 @@ class Cache(Storage, ABC):
     An abstract cache interface.
     """
 
+    @classmethod
+    def from_uri(cls, uri: str, **kwargs) -> 'Cache':
+        """
+        Create a cache base on given backend.
+        Auto-detect backend engine.
+        Subclass should override this method.
+        """
+        r = urllib.parse.urlsplit(uri)
+        engine = BACKENDS.get(r.scheme, DEFAULT_BACKEND)
+        if engine is not None:
+            return engine.from_uri(uri, **kwargs)
+        if r.scheme:
+            raise ValueError(f"schema not given: {uri}")
+        raise ValueError(f"Unsupported backend: {r.scheme}")
+
     def load(self, scopes: Iterable[Any] = None, **kwargs):
         """
         Load scope data from persistence storage.
@@ -231,6 +247,27 @@ class Cache(Storage, ABC):
         # backup has no ambiguity, save is going to be deprecated
         warnings.warn("use backup() instead", DeprecationWarning)
         self.backup(scopes, **kwargs)
+
+# schema -> cache builder; to build a cache from uri
+BACKENDS: Dict[str, Type[Cache]] = {}
+DEFAULT_BACKEND: Optional[Type[Cache]] = None
+
+def register_backend(schema: str, cls: Type[Cache]):
+    """
+    Register a backend, then we can get create the cache by `Cache.from_uri()`.
+    """
+    if schema in BACKENDS:
+        warnings.warn(f"Backend {schema} already defined, it will be overwritten.")
+    BACKENDS[schema] = cls
+
+class RegistrableCache(Cache, ABC):
+    """
+    Subclasses are forced to implement the `from_uri` method.
+    """
+    @classmethod
+    @abstractmethod
+    def from_uri(cls, uri: str, **kwargs) -> Cache:
+        pass
 
 class NoOpCache(Cache):
     """

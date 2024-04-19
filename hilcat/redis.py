@@ -2,15 +2,19 @@
 
 from typing import Any, Iterable, Union
 import redis
-from .core import Cache
+from .core import RegistrableCache
 
 _REDIS_KEY_TYPE = Union[str, bytes]
 
-class RedisCache(Cache):
+class RedisCache(RegistrableCache):
     """
     Use redis as backend.
     Ignore scope for all cache methods.
     """
+
+    @classmethod
+    def from_uri(cls, uri: str, **kwargs) -> 'RedisCache':
+        return cls(url=uri, **kwargs)
 
     def __init__(self, client: redis.Redis = None, url: str = None, host: str = None, port: int = None, db=0):
         if client is not None:

@@ -12,10 +12,11 @@ from typing import (
     Literal, Union,
     Tuple, Hashable,
 )
+import re
 from abc import ABC, abstractmethod
 from types import ModuleType
 import dataclasses
-from ..core import Cache
+from ..core import RegistrableCache
 
 _FETCH_SIZE_TYPE = Union[Literal['one', 'all'], int]
 _EXECUTE_PARAM_TYPE = Union[Sequence[Any], Dict[str, Any]]
@@ -382,7 +383,7 @@ DEFAULT_SQL_BUILDERS = {
     "pyformat": PyformatSqlBuilder(),
 }
 
-class RelationalDbCache(Cache, ABC):
+class RelationalDbCache(RegistrableCache, ABC):
     """
     Use a relational database as backend.
     Each scope corresponds to a table, and each key corresponds to a row.
@@ -413,6 +414,12 @@ class RelationalDbCache(Cache, ABC):
             if cls.paramstyle not in DEFAULT_SQL_BUILDERS:
                 raise ValueError(f"Wrong paramstyle: {cls.paramstyle}")
             cls.sql_builder = DEFAULT_SQL_BUILDERS[cls.paramstyle]
+
+    @classmethod
+    def from_uri(cls, uri: str, **kwargs) -> 'RelationalDbCache':
+        assert re.match(r'\w+://.+', uri), uri
+        schema, database = uri.split('://')
+        return cls(database=database, **kwargs)
 
     def connect_db(self, database: str = None, connect_args: Dict[str, Any] = None):
         """
