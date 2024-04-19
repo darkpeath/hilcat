@@ -6,7 +6,8 @@ from .core import (
     LocalFileCache, SimpleLocalFileCache,
     BinaryFileCache, SimpleBinaryFileCache,
     TextFileCache, SimpleTextFileCache,
-    MiddleCache,
+    MiddleCache, MemoryMiddleCache,
+    CacheAgent,
 )
 from .db import *
 try:
