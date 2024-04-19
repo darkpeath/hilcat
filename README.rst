@@ -20,7 +20,7 @@ In some implements, :code:`scope` may be always :code:`None` and should be ignor
 
 
 Init by different backends
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 in memory cache
 ^^^^^^^^^^^^^^^^
