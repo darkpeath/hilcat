@@ -20,12 +20,10 @@ class SqliteSqlBuilder(QmarkSqlBuilder):
 
 @dataclasses.dataclass
 class SqliteScopeConfig(RelationalDbScopeConfig):
-    default_column_type = "text"
+    default_column_type = "str"
     def __post_init__(self):
         warnings.warn("use RelationalDbScopeConfig instead", DeprecationWarning)
         super().__post_init__()
-    def get_column_type(self, col: str) -> str:
-        return self.column_types.get(col, 'str')
 
 class SqliteCache(RelationalDbCache):
     """
