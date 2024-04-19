@@ -93,6 +93,9 @@ class RelationalDbScopeConfig:
     # convert value when fetch and set
     value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto'
 
+    # this value should be overwritten for certain database
+    default_column_type = "text"
+
     def _check_value_adapter(self, adapter) -> ValueAdapter:
         if adapter == 'auto':
             if len(self.columns) == 1:
@@ -132,8 +135,7 @@ class RelationalDbScopeConfig:
         self.value_adapter = self._check_value_adapter(self.value_adapter)
 
     def get_column_type(self, col: str) -> str:
-        # this method should be overwritten for certain database
-        return self.column_types.get(col, 'text')
+        return self.column_types.get(col, self.default_column_type)
 
 @dataclasses.dataclass
 class Operation:

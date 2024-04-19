@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import warnings
+import dataclasses
 from typing import List
 from .relational import (
     RelationalDbScopeConfig,
@@ -16,7 +18,12 @@ class SqliteSqlBuilder(QmarkSqlBuilder):
     def build_select_table_columns_operation(self, table: str, filter_uniq=False) -> Operation:
         return Operation(statement=f"PRAGMA table_info({table})")
 
+@dataclasses.dataclass
 class SqliteScopeConfig(RelationalDbScopeConfig):
+    default_column_type = "text"
+    def __post_init__(self):
+        warnings.warn("use RelationalDbScopeConfig instead", DeprecationWarning)
+        super().__post_init__()
     def get_column_type(self, col: str) -> str:
         return self.column_types.get(col, 'str')
 

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import warnings
+import dataclasses
 from typing import Any
 from .relational import (
     Operation,
@@ -27,9 +29,13 @@ class PostgresqlBuilder(FormatSqlBuilder):
             stmt = f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}'"
         return Operation(statement=stmt)
 
+@dataclasses.dataclass
 class PostgresqlScopeConfig(RelationalDbScopeConfig):
-    def get_column_type(self, col: str) -> str:
-        return self.column_types.get(col, 'text')
+    default_column_type = "text"
+    def __post_init__(self):
+        warnings.warn("use RelationalDbScopeConfig instead", DeprecationWarning)
+        super().__post_init__()
+
 
 class PostgresqlCache(RelationalDbCache):
 

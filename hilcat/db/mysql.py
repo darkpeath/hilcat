@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import warnings
+import dataclasses
 from typing import (
     Dict, Any, Tuple,
 )
@@ -35,9 +37,12 @@ class MysqlSqlBuilder(FormatSqlBuilder):
                 f" ON DUPLICATE KEY"
                 f" UPDATE {second}"), False
 
+@dataclasses.dataclass
 class MysqlScopeConfig(RelationalDbScopeConfig):
-    def get_column_type(self, col: str) -> str:
-        return self.column_types.get(col, 'text')
+    default_column_type = "text"
+    def __post_init__(self):
+        warnings.warn("use RelationalDbScopeConfig instead", DeprecationWarning)
+        super().__post_init__()
 
 class BaseBackend(RelationalDbCache, ABC):
     """
