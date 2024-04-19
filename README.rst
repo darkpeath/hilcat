@@ -186,7 +186,7 @@ Save scope data to persistence storage.
 Some implements may have no persistence storage, thus this method do nothing.
 
 Decorate a function
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
