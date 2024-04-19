@@ -25,13 +25,21 @@ Init by different backends
 auto backend
 ^^^^^^^^^^^^^^^^^
 
-create a cache base on redis
+create a cache based on redis
 
 .. code-block:: python
 
   from hilcat import Cache
 
   cache = Cache.from_uri('redis://localhost:1458')
+
+create a cache based on sqlite
+
+.. code-block:: python
+
+  from hilcat import Cache
+
+  cache = Cache.from_uri('sqlite:///t.db')
 
 in memory cache
 ^^^^^^^^^^^^^^^^
