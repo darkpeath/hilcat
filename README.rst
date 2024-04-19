@@ -134,14 +134,14 @@ cache api
 
 Assume there is a cache named :code:`cache`.
 
-exists
-^^^^^^^
+exists(key, scope=None)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Test if a key exists in cache for certain scope.
 
 
-fetch
-^^^^^^^^^^^^^^
+fetch(key, default=None, scope=None)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 If key not exists, return default value.
 
@@ -149,20 +149,20 @@ If key not exists, return default value.
 
   value = cache.fetch('one', 1, scope='a')
 
-set
-^^^^^^
+set(key, value, scope=None)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
   cache.set('one', 1, scope='a')
 
-update
-^^^^^^^^
+update(key, value, scope=None, \*\*kwargs)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Same as method :code:`set`, but return value may diff in some implements.
 
-get
-^^^^^^
+get(key, func=None, scope=None)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 If key exists, just return value stored in cache;
 else if key not exists, calculate value and store to cache, the return value.
@@ -171,34 +171,34 @@ else if key not exists, calculate value and store to cache, the return value.
 
   value = cache.get('one', lambda: 1, scope='a')
 
-pop
-^^^^^
+pop(key, scope=None)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Delete value of given key for certain scope.
 
-scopes
-^^^^^^^
+scopes()
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Get all scopes in the cache.
 
 May not supported for some implements.
 
-keys
-^^^^^^
+keys(scope=None)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Get all keys for certain scope.
 
 May not supported for some implements.
 
-load
-^^^^^^
+load(scopes=None)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Load scope data from persistence storage.
 
 Some implements may have no persistence storage, thus this method do nothing.
 
-backup
-^^^^^^
+backup(scopes=None)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Save scope data to persistence storage.
 
