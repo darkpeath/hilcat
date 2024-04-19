@@ -22,6 +22,17 @@ In some implements, :code:`scope` may be always :code:`None` and should be ignor
 Init by different backends
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+auto backend
+^^^^^^^^^^^^^^^^^
+
+create a cache base on redis
+
+.. code-block:: python
+
+  from hilcat import Cache
+
+  cache = Cache.from_uri('redis://localhost:1458')
+
 in memory cache
 ^^^^^^^^^^^^^^^^
 
