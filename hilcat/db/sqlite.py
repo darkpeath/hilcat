@@ -2,17 +2,18 @@
 
 import re
 import warnings
-import dataclasses
-from typing import List, Sequence, Any
+from typing import List, Sequence, Any, Hashable, Dict, Union, Literal
 from .relational import (
     RelationalDbScopeConfig,
     RelationalDbCache,
     Operation,
-    QmarkSqlBuilder,
+    QmarkSqlBuilder, ValueAdapter,
 )
 import sqlite3
 
 class SqliteSqlBuilder(QmarkSqlBuilder):
+    default_column_type = "str"
+
     def build_select_all_table_operation(self) -> Operation:
         return Operation(statement="SELECT name FROM sqlite_master WHERE type = 'table'")
 
@@ -23,13 +24,15 @@ class SqliteSqlBuilder(QmarkSqlBuilder):
         # second is column name
         return result[1]
 
-@dataclasses.dataclass
 class SqliteScopeConfig(RelationalDbScopeConfig):
-    default_column_type = "str"
-    def __post_init__(self):
+    def __init__(self, scope: Hashable, table: str = None, uniq_column: str = None,
+                 uniq_columns: Sequence[str] = ('id',), columns: Sequence[str] = ('data',),
+                 column_types: Dict[str, str] = None,
+                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
+                 default_column_type="str"):
         warnings.warn("use RelationalDbScopeConfig instead", DeprecationWarning)
-        super().__post_init__()
-
+        super().__init__(scope, table, uniq_column, uniq_columns, columns, column_types, value_adapter,
+                         default_column_type)
 class SqliteCache(RelationalDbCache):
     """
     Use a sqlite database as backend.

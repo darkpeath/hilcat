@@ -2,16 +2,18 @@
 
 import warnings
 import dataclasses
-from typing import Any
+from typing import Any, Hashable, Sequence, Dict, Union, Literal
 from .relational import (
     Operation,
     FormatSqlBuilder,
     RelationalDbCache,
-    RelationalDbScopeConfig,
+    RelationalDbScopeConfig, ValueAdapter,
 )
 import psycopg
 
 class PostgresqlBuilder(FormatSqlBuilder):
+
+    default_column_type = "text"
 
     def get_value_type(self, value: Any) -> str:
         return 's'
@@ -29,13 +31,15 @@ class PostgresqlBuilder(FormatSqlBuilder):
             stmt = f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}'"
         return Operation(statement=stmt)
 
-@dataclasses.dataclass
 class PostgresqlScopeConfig(RelationalDbScopeConfig):
-    default_column_type = "text"
-    def __post_init__(self):
+    def __init__(self, scope: Hashable, table: str = None, uniq_column: str = None,
+                 uniq_columns: Sequence[str] = ('id',), columns: Sequence[str] = ('data',),
+                 column_types: Dict[str, str] = None,
+                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
+                 default_column_type: str = None):
         warnings.warn("use RelationalDbScopeConfig instead", DeprecationWarning)
-        super().__post_init__()
-
+        super().__init__(scope, table, uniq_column, uniq_columns, columns, column_types, value_adapter,
+                         default_column_type)
 
 class PostgresqlCache(RelationalDbCache):
 

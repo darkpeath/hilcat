@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
 
-import warnings
-import dataclasses
 from typing import (
     Dict, Any, Tuple, Sequence,
+    Hashable, Union, Literal,
 )
+import warnings
 from abc import ABC, abstractmethod
 from .relational import (
     FormatSqlBuilder,
     RelationalDbScopeConfig,
-    RelationalDbCache, Operation,
+    RelationalDbCache, Operation, ValueAdapter,
 )
 
 class MysqlSqlBuilder(FormatSqlBuilder):
+
+    default_column_type = 'text'
 
     def get_value_type(self, value: Any) -> str:
         return 's'
@@ -41,12 +43,15 @@ class MysqlSqlBuilder(FormatSqlBuilder):
                 f" ON DUPLICATE KEY"
                 f" UPDATE {second}"), False
 
-@dataclasses.dataclass
 class MysqlScopeConfig(RelationalDbScopeConfig):
-    default_column_type = "text"
-    def __post_init__(self):
+    def __init__(self, scope: Hashable, table: str = None, uniq_column: str = None,
+                 uniq_columns: Sequence[str] = ('id',), columns: Sequence[str] = ('data',),
+                 column_types: Dict[str, str] = None,
+                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
+                 default_column_type: str = None):
         warnings.warn("use RelationalDbScopeConfig instead", DeprecationWarning)
-        super().__post_init__()
+        super().__init__(scope, table, uniq_column, uniq_columns, columns, column_types, value_adapter,
+                         default_column_type)
 
 class BaseBackend(RelationalDbCache, ABC):
     """

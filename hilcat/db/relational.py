@@ -18,6 +18,8 @@ from abc import ABC, abstractmethod
 from types import ModuleType
 import dataclasses
 import warnings
+
+from .. import Cache
 from ..core import RegistrableCache
 
 _FETCH_SIZE_TYPE = Union[Literal['one', 'all'], int]
@@ -82,39 +84,50 @@ class SequenceAdapter(ValueAdapter):
     def parse_column_values(self, value: Dict[str, Any]) -> Sequence[Any]:
         return self.return_type(map(value.get, self.cols))
 
-@dataclasses.dataclass
-class RelationalDbScopeConfig:
-    scope: Hashable
-    table: str = None
-    uniq_column: str = None     # unique column to identify rows
-    uniq_columns: Sequence[str] = ('id',)   # unique columns to identify rows
-    columns: Sequence[str] = ('data', )
-    columns_with_id: List[str] = dataclasses.field(init=False)
+class BaseTableConfig:
+    def __init__(self, table: str,
+                 uniq_columns: Sequence[str] = ('id',),
+                 columns: Sequence[str] = ('data',),
+                 column_types: Dict[str, str] = None,
+                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
+                 default_column_type: str = None):
+        """
+        :param table:
+        :param uniq_columns:    unique columns to identify rows
+        :param columns:         columns to select when invoke `cache.fetch()`
+        :param column_types:    if column not specified here, type should be str
+        :param value_adapter:   convert value when fetch and set
+        :param default_column_type:     if column type not specified, use this value as default
+        """
+        self.table = table
+        self.columns = columns
+        self.column_types = dict(column_types or {})
+        self.default_column_type = default_column_type
+        if isinstance(uniq_columns, str):
+            self.uniq_columns = (uniq_columns,)
+        else:
+            self.uniq_columns = uniq_columns
+        if not self.uniq_columns:
+            raise ValueError("uniq_columns cannot be empty.")
+        self.columns_with_id = [x for x in self.uniq_columns if x not in self.columns] + list(self.columns)
+        self.value_adapter = self._check_value_adapter(value_adapter, columns)
 
-    # if column not specified here, type should be str
-    column_types: Dict[str, str] = dataclasses.field(default_factory=dict)
-
-    # convert value when fetch and set
-    value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto'
-
-    # this value should be overwritten for certain database
-    default_column_type = "text"
-
-    def _check_value_adapter(self, adapter) -> ValueAdapter:
+    @staticmethod
+    def _check_value_adapter(adapter, columns: Sequence[str]) -> ValueAdapter:
         if adapter == 'auto':
-            if len(self.columns) == 1:
-                return SingleAdapter(self.columns[0])
+            if len(columns) == 1:
+                return SingleAdapter(columns[0])
             return DefaultAdapter()
         elif adapter == 'default':
             return DefaultAdapter()
         elif adapter == 'single':
-            if len(self.columns) != 1:
+            if len(columns) != 1:
                 raise ValueError(f"columns length should be 1 when value_adapter is 'single'.")
-            return SingleAdapter(self.columns[0])
+            return SingleAdapter(columns[0])
         elif adapter == 'tuple':
-            return SequenceAdapter(self.columns, return_type=tuple)
+            return SequenceAdapter(columns, return_type=tuple)
         elif adapter == 'list':
-            return SequenceAdapter(self.columns, return_type=list)
+            return SequenceAdapter(columns, return_type=list)
 
         if isinstance(adapter, ValueAdapter):
             return adapter
@@ -124,24 +137,6 @@ class RelationalDbScopeConfig:
         else:
             msg = f"Unexpected value_adapter type: {type(adapter)}"
         raise ValueError(msg)
-
-    def __post_init__(self):
-        if self.uniq_column:
-            warnings.warn("`uniq_column` is deprecated, use `uniq_columns` instead.", DeprecationWarning)
-            self.uniq_columns = (self.uniq_column,)
-        if isinstance(self.uniq_columns, str):
-            self.uniq_columns = (self.uniq_columns,)
-        if not self.uniq_columns:
-            raise ValueError("uniq_columns cannot be empty.")
-
-        self.columns_with_id = [x for x in self.uniq_columns if x not in self.columns] + list(self.columns)
-
-        if not self.table:
-            if not isinstance(self.scope, str):
-                raise ValueError("Arg scope must be a str when table not given.")
-            self.table = self.scope
-
-        self.value_adapter = self._check_value_adapter(self.value_adapter)
 
     def get_column_type(self, col: str) -> str:
         return self.column_types.get(col, self.default_column_type)
@@ -155,6 +150,24 @@ class RelationalDbScopeConfig:
             return key
         else:
             return [key]
+
+class RelationalDbScopeConfig(BaseTableConfig):
+    def __init__(self, scope: Hashable, table: str = None,
+                 uniq_column: str = None,
+                 uniq_columns: Sequence[str] = ('id',),
+                 columns: Sequence[str] = ('data',),
+                 column_types: Dict[str, str] = None,
+                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
+                 default_column_type: str = None):
+        self.scope = scope
+        if not table:
+            if not isinstance(scope, str):
+                raise ValueError("Arg scope must be a str when table not given.")
+            table = scope
+        if uniq_column:
+            warnings.warn("`uniq_column` is deprecated, use `uniq_columns` instead.", DeprecationWarning)
+            uniq_columns = (uniq_column,)
+        super().__init__(table, uniq_columns, columns, column_types, value_adapter, default_column_type)
 
 @dataclasses.dataclass
 class Operation:
@@ -236,11 +249,20 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
     A simple implement of SqlBuilder.
     """
 
-    list_parameter = False      # pass parameters as a list
+    # whether to pass parameters as a list
+    list_parameter = False
+
+    # if column type not specified in the config, use this value as default
+    # should be overwritten for different backends
+    default_column_type = 'text'
+
+    def _get_column_type(self, col: str, config: RelationalDbScopeConfig) -> str:
+        return config.get_column_type(col) or self.default_column_type
 
     def build_create_table_operation(self, *configs: RelationalDbScopeConfig, check_exists=True) -> Operation:
         def gen_column_def(col: str, config: RelationalDbScopeConfig) -> str:
-            s = f"{col} {config.get_column_type(col)}"
+            t = self._get_column_type(col, config)
+            s = f"{col} {t}"
             if col in config.uniq_columns:
                 s += ' PRIMARY KEY'
             return s
@@ -476,6 +498,7 @@ class RelationalDbCache(RegistrableCache, ABC):
         :param scopes:              initialized scopes
         :param new_scope_config:    when a new scope given, how to config it
         :param all_table_as_scope:  if `True`, add all table in database to scopes
+
         """
         self.conn = connection or self.connect_db(database, connect_args)
         self.cursor = self.conn.cursor()
@@ -702,3 +725,4 @@ class RelationalDbCache(RegistrableCache, ABC):
         config = self._get_scope_config(scope)
         operation = self.sql_builder.build_select_operation(config=config, key=None)
         return self._execute(operation, fetch_size='all', cursor='new')
+

@@ -13,7 +13,6 @@ from .relational import (
 )
 from .sqlite import (
     SqliteSqlBuilder,
-    SqliteScopeConfig,
     SqliteCache,
 )
 try:
