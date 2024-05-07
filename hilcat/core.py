@@ -438,9 +438,11 @@ class SimpleLocalFileCache(LocalFileCache, ABC):
     def _get_filepath(self, key: str, scope: str = None) -> str:
         return os.path.join(self.root_dir, scope or '', key + self.suf)
 
-    def keys(self, scope: Any = None) -> Iterable[str]:
+    def keys(self, scope: str = None) -> Iterable[str]:
         # find all files under the directory
         root = pathlib.Path(self.root_dir)
+        if scope:
+            root = root.joinpath(scope)
         for f in root.rglob("*" + self.suf):
             if f.is_file():
                 key = f.relative_to(root).as_posix()
