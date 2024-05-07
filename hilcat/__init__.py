@@ -6,6 +6,7 @@ from .core import (
     LocalFileCache, SimpleLocalFileCache,
     BinaryFileCache, SimpleBinaryFileCache,
     TextFileCache, SimpleTextFileCache,
+    SimpleJsonFileCache,
     MiddleCache, MemoryMiddleCache,
     CacheAgent,
     register_backend,

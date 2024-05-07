@@ -8,13 +8,14 @@ from typing import (
     Any, Dict, List,
     Callable, Iterable,
     Hashable, Optional,
-    Type,
+    Type, Union,
 )
 from abc import (
     ABC, abstractmethod,
 )
 import os
 import sys
+import json
 import inspect
 import pathlib
 import warnings
@@ -456,6 +457,18 @@ class SimpleTextFileCache(SimpleLocalFileCache, TextFileCache):
     def __init__(self, root_dir: str, suf: str = '', encoding='utf-8'):
         SimpleLocalFileCache.__init__(self, root_dir, suf)
         TextFileCache.__init__(self, encoding)
+
+class SimpleJsonFileCache(SimpleTextFileCache):
+    def __init__(self, root_dir: str, suf: str = '.json', encoding='utf-8'):
+        super().__init__(root_dir, suf, encoding)
+
+    def _read_file(self, filepath: str) -> Union[dict, list]:
+        with open(filepath, encoding=self.encoding) as f:
+            return json.load(f)
+
+    def _write_file0(self, filepath: str, content: Union[dict, list]):
+        with open(filepath, 'w', encoding=self.encoding) as f:
+            json.dump(content, f)
 
 class MiddleCache(Cache, ABC):
     """
