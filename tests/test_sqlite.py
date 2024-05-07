@@ -2,16 +2,16 @@
 
 import os
 from hilcat import Cache
-from hilcat import SqliteCache, SqliteScopeConfig
+from hilcat import SqliteCache, RelationalDbScopeConfig
 
 def clear_db(db_file: str):
     if os.path.exists(db_file):
         os.remove(db_file)
 
 scopes = [
-    SqliteScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
-                      column_types={'count': 'int'}),
-    SqliteScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
+    RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
+                            column_types={'count': 'int'}),
+    RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
 ]
 def run_test(cache: Cache):
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')

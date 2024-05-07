@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from hilcat.db.mysql import (
-    MysqlScopeConfig,
-    MysqlCache,
-)
+from hilcat import MysqlCache, RelationalDbScopeConfig
 
 def test_connect1():
     import pymysql
@@ -25,10 +22,10 @@ def test_connect2():
 
 def pipeline(connection):
     cache = MysqlCache(connection=connection, scopes=[
-        MysqlScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
-                         column_types={'id': 'varchar(50)', 'count': 'int'}),
-        MysqlScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'],
-                         column_types={'eid': "int"})
+        RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
+                                column_types={'id': 'varchar(50)', 'count': 'int'}),
+        RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'],
+                                column_types={'eid': "int"})
     ])
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')
     cache.set(key='a2', value={'name': 'iiwwww', 'comment': 'this is a2', 'count': 3}, scope='a')

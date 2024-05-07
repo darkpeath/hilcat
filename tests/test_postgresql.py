@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from hilcat.db.postgresql import (
-    PostgresqlCache,
-    PostgresqlScopeConfig,
-)
+from hilcat import PostgresqlCache, RelationalDbScopeConfig
 
 def test_connect():
     import psycopg
@@ -17,9 +14,9 @@ def test_connect():
 
 def test_postgresql():
     cache = PostgresqlCache(database="postgresql://postgres:123@localhost:5432/hilcat_test", scopes=[
-        PostgresqlScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
-                              column_types={'count': 'int'}),
-        # PostgresqlScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
+        RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
+                                column_types={'count': 'int'}),
+        RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
     ])
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')
     cache.set(key='a2', value={'name': 'iiwwww', 'comment': 'this is a2', 'count': 3}, scope='a')

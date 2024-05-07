@@ -1,14 +1,14 @@
 import os
 import collections
-from hilcat import SqliteCache, SqliteScopeConfig
+from hilcat import SqliteCache, RelationalDbScopeConfig
 
 def test_decorator():
     db_file = "decorator.db"
     if os.path.exists(db_file):
         os.remove(db_file)
     cache = SqliteCache(database=db_file, scopes=[
-        SqliteScopeConfig(scope='f1', uniq_column='x', columns=['y']),
-        SqliteScopeConfig(scope='f3', uniq_column='key', columns=['key', 'value'])
+        RelationalDbScopeConfig(scope='f1', uniq_column='x', columns=['y']),
+        RelationalDbScopeConfig(scope='f3', uniq_column='key', columns=['key', 'value'])
     ])
 
     c1 = collections.Counter()
