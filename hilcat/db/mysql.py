@@ -3,7 +3,7 @@
 import warnings
 import dataclasses
 from typing import (
-    Dict, Any, Tuple,
+    Dict, Any, Tuple, Sequence,
 )
 from abc import ABC, abstractmethod
 from .relational import (
@@ -26,6 +26,10 @@ class MysqlSqlBuilder(FormatSqlBuilder):
         else:
             stmt = f"DESCRIBE {table}"
         return Operation(statement=stmt)
+
+    def get_column_name_from_result(self, result: Sequence[Any]) -> str:
+        # 4th is column name.
+        return result[4]
 
     def _gen_update_statement(self, config: 'MysqlScopeConfig', value: Dict[str, Any]) -> Tuple[str, bool]:
         first = ','.join(self.config_variable(name=k, order=i, value=v)
@@ -65,14 +69,6 @@ class BaseBackend(RelationalDbCache, ABC):
             import warnings
             warnings.warn("uri is ignored")
             return self._connect_db0(**kwargs)
-
-    def _get_unique_column_name(self, table: str) -> str:
-        operation = self.sql_builder.build_select_table_columns_operation(table, filter_uniq=True)
-        columns = self._execute(operation, fetch_size='all')
-        if len(columns) != 1:
-            raise ValueError(f"There should be exactly one uniq column, but {len(columns)} has given.")
-        # 4th is column name.
-        return columns[0][4]
 
 class PymysqlBackend(BaseBackend):
     def _connect_db0(self, **kwargs):
