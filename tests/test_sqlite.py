@@ -11,7 +11,8 @@ def clear_db(db_file: str):
 scopes = [
     RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
                             column_types={'count': 'int'}),
-    RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
+    RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status']),
+    RelationalDbScopeConfig(scope='d', uniq_columns=['id1', 'id2'], columns=['value']),
 ]
 def run_test(cache: Cache):
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')
@@ -26,6 +27,8 @@ def run_test(cache: Cache):
     cache.set(key='a3', value={'name': 'lli', 'comment': 'this is a3', 'count': 2}, scope='a')
     cache.set(key='a1', value={'name': 'jjii', 'comment': 'this is a1 again', 'count': 4}, scope='a')
     cache.pop(key='a2', scope='a')
+    cache.set(key=("d1", "d2"), value=3, scope="d")
+    assert cache.get(("d1", "d2"), scope="d") == 3
 
 def test_sqlite():
     db_file = "t.db"

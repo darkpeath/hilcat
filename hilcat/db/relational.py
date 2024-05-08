@@ -160,8 +160,8 @@ class BaseTableConfig:
     def normalize_columns_values(value: Any, columns: Sequence[str]) -> Sequence[Any]:
         n = len(columns)
         if n > 1:
-            if not isinstance(value, Sequence):
-                raise ValueError(f"value should be a sequence, got {type(value)}")
+            if not isinstance(value, (list, tuple)):
+                raise ValueError(f"value should be a list or tuple, got {type(value)}")
             m = len(value)
             if m != n:
                 raise ValueError(f"value size should be {n}, but got {m}")
@@ -253,22 +253,28 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
     def _get_column_type(self, col: str, config: BaseTableConfig) -> str:
         return config.get_column_type(col) or self.default_column_type
 
+    def _gen_column_def(self, col: str, config: BaseTableConfig) -> str:
+        t = self._get_column_type(col, config)
+        s = f"{col} {t}"
+        # if col in config.uniq_columns:
+            # s += " UNIQUE"
+            # s += ' PRIMARY KEY'
+        return s
+
+    def _gen_column_defines(self, config: BaseTableConfig):
+        columns = [self._gen_column_def(x, config) for x in config.columns_with_id]
+        columns += [f" PRIMARY KEY ({','.join(config.uniq_columns)})"]
+        return ','.join(columns)
+
+    def _gen_create_table_sql(self, config: BaseTableConfig, check_exists=True) -> str:
+        sql = "CREATE TABLE"
+        if check_exists:
+            sql += " IF NOT EXISTS"
+        sql += f" {config.table} ({self._gen_column_defines(config)})"
+        return sql
+
     def build_create_table_operation(self, *configs: BaseTableConfig, check_exists=True) -> Operation:
-        def gen_column_def(col: str, config: BaseTableConfig) -> str:
-            t = self._get_column_type(col, config)
-            s = f"{col} {t}"
-            if col in config.uniq_columns:
-                s += ' PRIMARY KEY'
-            return s
-        def gen_column_defines(config: BaseTableConfig):
-            return ','.join(gen_column_def(x, config) for x in config.columns_with_id)
-        def gen_create_table_sql(config: BaseTableConfig) -> str:
-            sql = "CREATE TABLE"
-            if check_exists:
-                sql += " IF NOT EXISTS"
-            sql += f" {config.table} ({gen_column_defines(config)})"
-            return sql
-        lines = [gen_create_table_sql(x) + ";" for x in configs]
+        lines = [self._gen_create_table_sql(x) + ";" for x in configs]
         return Operation(statement="\n".join(lines), many=len(configs) > 1)
 
     @abstractmethod

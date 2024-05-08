@@ -11,6 +11,7 @@ def test_connect():
     cursor.execute("SELECT tablename FROM pg_tables")
     res = list(cursor.fetchall())
     print(res)
+    cursor.close()
     conn.close()
 
 def drop_tables(database: str, tables: Sequence[str]):
@@ -18,6 +19,7 @@ def drop_tables(database: str, tables: Sequence[str]):
     cursor = conn.cursor()
     for table in tables:
         cursor.execute(f"DROP TABLE IF EXISTS {table}")
+    conn.commit()
     cursor.close()
     conn.close()
 
@@ -26,7 +28,13 @@ def test_postgresql():
     scopes = [
         RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
                                 column_types={'count': 'int'}),
-        RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
+        RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status']),
+        RelationalDbScopeConfig(
+            scope='d', uniq_columns=['id1', 'id2'], columns=['value'],
+            column_types={
+                "value": "int",
+            }
+        ),
     ]
     drop_tables(database, tables=[x.table for x in scopes])
     cache = PostgresqlCache(database=database, scopes=scopes)
@@ -42,5 +50,7 @@ def test_postgresql():
     cache.set(key='a3', value={'name': 'lli', 'comment': 'this is a3', 'count': 2}, scope='a')
     cache.set(key='a1', value={'name': 'jjii', 'comment': 'this is a1 again', 'count': 4}, scope='a')
     cache.pop(key='a2', scope='a')
+    cache.set(key=("d1", "d2"), value=3, scope="d")
+    assert cache.get(("d1", "d2"), scope="d") == 3
 
 
