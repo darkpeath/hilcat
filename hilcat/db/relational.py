@@ -8,7 +8,7 @@ Actually, implement a cache is enough.
 import collections
 from typing import (
     Any, Iterable, Dict,
-    List, Type,
+    List, Type, Optional,
     Sequence, Callable,
     Literal, Union,
     Tuple, Hashable,
@@ -658,7 +658,7 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
 
 
 class RelationalDbScopeConfig(BaseTableConfig):
-    def __init__(self, scope: Hashable, table: str = None,
+    def __init__(self, scope: Optional[Hashable], table: str = None,
                  uniq_column: str = None,
                  uniq_columns: Sequence[str] = ('id',),
                  columns: Sequence[str] = ('data',),
