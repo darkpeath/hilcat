@@ -8,7 +8,7 @@ from typing import (
     Any, Dict, List,
     Callable, Iterable,
     Hashable, Optional,
-    Type, Union,
+    Type, Union, Sequence,
 )
 from abc import (
     ABC, abstractmethod,
@@ -102,7 +102,8 @@ class Storage(ABC):
         # default is same as set
         return self.set(key, value, scope=scope, **kwargs)
 
-    def get(self, key: Any, func: Callable[[], Any] = None, scope: Any = None, **kwargs) -> Any:
+    def get(self, key: Any, func: Callable = None, func_args: Sequence[Any] = None,
+            func_kwargs: Dict[str, Any] = None, scope: Any = None, **kwargs) -> Any:
         """
         If func is None, it's equal to method `fetch()`.
         If func not None,
@@ -111,7 +112,9 @@ class Storage(ABC):
         """
         if func is None or self.exists(key, scope=scope):
             return self.fetch(key, scope=scope)
-        value = func()
+        func_args = func_args or []
+        func_kwargs = func_kwargs or {}
+        value = func(*func_args, **func_kwargs)
         self.set(key, value, scope=scope)
         return value
 
