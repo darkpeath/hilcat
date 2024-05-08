@@ -21,12 +21,17 @@ def test_connect2():
     conn.close()
 
 def pipeline(connection):
-    cache = MysqlCache(connection=connection, scopes=[
+    scopes = [
         RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
                                 column_types={'id': 'varchar(50)', 'count': 'int'}),
         RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'],
                                 column_types={'eid': "int"})
-    ])
+    ]
+    cursor = connection.cursor()
+    for scope in scopes:
+        cursor.execute(f'DROP TABLE IF EXISTS {scope.table}')
+    cursor.close()
+    cache = MysqlCache(connection=connection, scopes=scopes)
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')
     cache.set(key='a2', value={'name': 'iiwwww', 'comment': 'this is a2', 'count': 3}, scope='a')
     cache.set(key=1, value={'name': '12b', 'comment': 'this is b1', 'status': 7}, scope='b')
