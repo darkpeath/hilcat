@@ -1,13 +1,19 @@
 # -*- coding: utf-8 -*-
 
+import abc
 import warnings
-import dataclasses
-from typing import Any, Hashable, Sequence, Dict, Union, Literal
+from typing import (
+    Any, Hashable, Sequence,
+    Dict, Union, Literal,
+)
 from .relational import (
     Operation,
     FormatSqlBuilder,
+    BaseRelationalDbCache,
     RelationalDbCache,
-    RelationalDbScopeConfig, ValueAdapter,
+    SingleTableCache,
+    RelationalDbScopeConfig,
+    ValueAdapter,
 )
 import psycopg
 
@@ -41,7 +47,10 @@ class PostgresqlScopeConfig(RelationalDbScopeConfig):
         super().__init__(scope, table, uniq_column, uniq_columns, columns, column_types, value_adapter,
                          default_column_type)
 
-class PostgresqlCache(RelationalDbCache):
+class BasePostgresqlCache(BaseRelationalDbCache, abc.ABC):
+    """
+    Base abstract class for postgresql backend.
+    """
 
     api_module = psycopg
     paramstyle = "format"
@@ -59,3 +68,12 @@ class PostgresqlCache(RelationalDbCache):
         for stmt in stmts:
             cursor.execute(stmt.strip())
 
+class PostgresqlCache(BasePostgresqlCache, RelationalDbCache):
+    """
+    Use a postgresql database as backend.
+    """
+
+class PostgresqlSingleTableCache(BasePostgresqlCache, SingleTableCache):
+    """
+    Use one table of postgresql as backend.
+    """

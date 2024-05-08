@@ -18,14 +18,16 @@ from abc import ABC, abstractmethod
 from types import ModuleType
 import dataclasses
 import warnings
-
-from .. import Cache
 from ..core import RegistrableCache
+
 
 _FETCH_SIZE_TYPE = Union[Literal['one', 'all'], int]
 _EXECUTE_PARAM_TYPE = Union[Sequence[Any], Dict[str, Any]]
-_KEY_TYPE = Union[str, int, Sequence[str]]
+_COLUMN_VALUE_TYPE = Union[str, int]
+_KEY_TYPE = Union[_COLUMN_VALUE_TYPE, Sequence[_COLUMN_VALUE_TYPE]]
 
+
+# cache data format may diff from db api, we need an adapter to bridging
 class ValueAdapter(ABC):
     """
     Method `build_column_values` and `parse_column_values` should be reversed one-to-one mapping.
@@ -84,6 +86,19 @@ class SequenceAdapter(ValueAdapter):
     def parse_column_values(self, value: Dict[str, Any]) -> Sequence[Any]:
         return self.return_type(map(value.get, self.cols))
 
+
+@dataclasses.dataclass
+class Operation:
+    """
+    define an operation for execute() or executemany()
+    """
+    statement: str       # arg operation for cursor.execute()
+    parameters: _EXECUTE_PARAM_TYPE = dataclasses.field(default_factory=list)  # arg parameters for cursor.execute()
+
+    # many statements in template or not, if True, use cursor.executemany() instead of cursor.execute()
+    many: bool = False
+
+
 class BaseTableConfig:
     def __init__(self, table: str,
                  uniq_columns: Sequence[str] = ('id',),
@@ -141,45 +156,24 @@ class BaseTableConfig:
     def get_column_type(self, col: str) -> str:
         return self.column_types.get(col, self.default_column_type)
 
-    def normalize_uniq_column_values(self, key: Any) -> Sequence[Any]:
-        if len(self.uniq_columns) > 1:
-            if not isinstance(key, Sequence):
-                raise ValueError(f"key should be a sequence, got {type(key)}")
-            if len(key) != len(self.uniq_columns):
-                raise ValueError(f"key size should be {len(self.uniq_columns)}, but got {len(key)}")
-            return key
+    @staticmethod
+    def normalize_columns_values(value: Any, columns: Sequence[str]) -> Sequence[Any]:
+        n = len(columns)
+        if n > 1:
+            if not isinstance(value, Sequence):
+                raise ValueError(f"value should be a sequence, got {type(value)}")
+            m = len(value)
+            if m != n:
+                raise ValueError(f"value size should be {n}, but got {m}")
+            return value
         else:
-            return [key]
+            return [value]
 
-class RelationalDbScopeConfig(BaseTableConfig):
-    def __init__(self, scope: Hashable, table: str = None,
-                 uniq_column: str = None,
-                 uniq_columns: Sequence[str] = ('id',),
-                 columns: Sequence[str] = ('data',),
-                 column_types: Dict[str, str] = None,
-                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
-                 default_column_type: str = None):
-        self.scope = scope
-        if not table:
-            if not isinstance(scope, str):
-                raise ValueError("Arg scope must be a str when table not given.")
-            table = scope
-        if uniq_column:
-            warnings.warn("`uniq_column` is deprecated, use `uniq_columns` instead.", DeprecationWarning)
-            uniq_columns = (uniq_column,)
-        super().__init__(table, uniq_columns, columns, column_types, value_adapter, default_column_type)
+    def normalize_uniq_column_values(self, key: Any) -> Sequence[Any]:
+        return self.normalize_columns_values(key, self.uniq_columns)
 
-@dataclasses.dataclass
-class Operation:
-    """
-    define an operation for execute() or executemany()
-    """
-    statement: str       # arg operation for cursor.execute()
-    parameters: _EXECUTE_PARAM_TYPE = dataclasses.field(default_factory=list)  # arg parameters for cursor.execute()
 
-    # many statements in template or not, if True, use cursor.executemany() instead of cursor.execute()
-    many: bool = False
-
+# sql syntax may diff for different db, each backend should implement it's sql_builder
 class SqlBuilder(ABC):
     """
     Build select, update, delete sql for relational database.
@@ -210,25 +204,25 @@ class SqlBuilder(ABC):
         return result[0]
 
     @abstractmethod
-    def build_create_table_operation(self, *configs: RelationalDbScopeConfig, check_exists=True):
+    def build_create_table_operation(self, *configs: BaseTableConfig, check_exists=True):
         """
         Generate sql to create a table.
         """
 
     @abstractmethod
-    def build_select_operation(self, config: RelationalDbScopeConfig, key: Sequence[Any] = None, limit: int = -1,
-                               select_columns: Sequence[str] = None) -> Operation:
+    def build_select_operation(self, config: BaseTableConfig, key: Sequence[Any] = None, limit: int = -1,
+                               select_columns: Sequence[str] = None, distinct=False) -> Operation:
         """
         Generate sql to select row for given key.
         :param config:          scope configuration
         :param key:             uniq key for the row, maybe `None` to select all rows in the table
         :param limit:           limit number
         :param select_columns:  columns to be selected, if not set, select all in config
+        :param distinct:        whether distinct select columns
         """
 
     @abstractmethod
-    def build_update_operation(self, config: RelationalDbScopeConfig,
-                               key: Sequence[Any], value: Dict[str, Any]) -> Operation:
+    def build_update_operation(self, config: BaseTableConfig, key: Sequence[Any], value: Dict[str, Any]) -> Operation:
         """
         Generate sql to update or insert row for given key with given value.
         :param config:      scope configuration
@@ -237,7 +231,7 @@ class SqlBuilder(ABC):
         """
 
     @abstractmethod
-    def build_delete_operation(self, config: RelationalDbScopeConfig, key: Sequence[Any] = None) -> Operation:
+    def build_delete_operation(self, config: BaseTableConfig, key: Sequence[Any] = None) -> Operation:
         """
         Generate sql to delete row for given key.
         :param config:      scope configuration
@@ -256,19 +250,19 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
     # should be overwritten for different backends
     default_column_type = 'text'
 
-    def _get_column_type(self, col: str, config: RelationalDbScopeConfig) -> str:
+    def _get_column_type(self, col: str, config: BaseTableConfig) -> str:
         return config.get_column_type(col) or self.default_column_type
 
-    def build_create_table_operation(self, *configs: RelationalDbScopeConfig, check_exists=True) -> Operation:
-        def gen_column_def(col: str, config: RelationalDbScopeConfig) -> str:
+    def build_create_table_operation(self, *configs: BaseTableConfig, check_exists=True) -> Operation:
+        def gen_column_def(col: str, config: BaseTableConfig) -> str:
             t = self._get_column_type(col, config)
             s = f"{col} {t}"
             if col in config.uniq_columns:
                 s += ' PRIMARY KEY'
             return s
-        def gen_column_defines(config: RelationalDbScopeConfig):
+        def gen_column_defines(config: BaseTableConfig):
             return ','.join(gen_column_def(x, config) for x in config.columns_with_id)
-        def gen_create_table_sql(config: RelationalDbScopeConfig) -> str:
+        def gen_create_table_sql(config: BaseTableConfig) -> str:
             sql = "CREATE TABLE"
             if check_exists:
                 sql += " IF NOT EXISTS"
@@ -314,14 +308,17 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             return list(variable_values.values())
         return variable_values
 
-    def build_select_operation(self, config: RelationalDbScopeConfig, key: Sequence[Any] = None, limit: int = -1,
-                               select_columns: Sequence[str] = None) -> Operation:
+    def build_select_operation(self, config: BaseTableConfig, key: Sequence[Any] = None, limit: int = -1,
+                               select_columns: Sequence[str] = None, distinct=False) -> Operation:
         if select_columns is None:
             # only select configured columns; if id not configured, ignore it
             select_columns = config.columns
         elif isinstance(select_columns, str):
             select_columns = [select_columns]
-        stmt = f"SELECT {','.join(select_columns)} FROM {config.table}"
+        stmt = "SELECT"
+        if distinct:
+            stmt += f" DISTINCT"
+        stmt += f" {','.join(select_columns)} FROM {config.table}"
         variable_values = collections.OrderedDict()
         if key is not None:
             assert len(config.uniq_columns) == len(key)
@@ -335,7 +332,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             stmt += f" LIMIT {limit}"
         return Operation(statement=stmt, parameters=self.normalize_variable_values(variable_values))
 
-    def _gen_update_statement(self, config: RelationalDbScopeConfig, value: Dict[str, Any]) -> Tuple[str, bool]:
+    def _gen_update_statement(self, config: BaseTableConfig, value: Dict[str, Any]) -> Tuple[str, bool]:
         """
         Generate statement for Operation, data of uniq column have added to value.
         :return:    (statement, many or not)
@@ -358,8 +355,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
         """
         return value, list(value.keys()) * 2
 
-    def build_update_operation(self, config: RelationalDbScopeConfig,
-                               key: Sequence[Any], value: Dict[str, Any]) -> Operation:
+    def build_update_operation(self, config: BaseTableConfig, key: Sequence[Any], value: Dict[str, Any]) -> Operation:
         # add uniq column to value
         assert len(config.uniq_columns) == len(key)
         value = dict(value)
@@ -373,7 +369,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
 
         return Operation(statement=stmt, parameters=parameters, many=many)
 
-    def build_delete_operation(self, config: RelationalDbScopeConfig, key: Sequence[Any] = None) -> Operation:
+    def build_delete_operation(self, config: BaseTableConfig, key: Sequence[Any] = None) -> Operation:
         stmt = f"DELETE FROM {config.table}"
         variable_values = collections.OrderedDict()
         if key is not None:
@@ -440,13 +436,8 @@ DEFAULT_SQL_BUILDERS = {
     "pyformat": PyformatSqlBuilder(),
 }
 
-class RelationalDbCache(RegistrableCache, ABC):
-    """
-    Use a relational database as backend.
-    Each scope corresponds to a table, and each key corresponds to a row.
-    It's recommended to use a string as key, but other type such as int is also allowed.
-    """
 
+class BaseRelationalDbCache(RegistrableCache, ABC):
     # if given api_module, use the module to connect
     api_module: ModuleType
 
@@ -472,12 +463,6 @@ class RelationalDbCache(RegistrableCache, ABC):
                 raise ValueError(f"Wrong paramstyle: {cls.paramstyle}")
             cls.sql_builder = DEFAULT_SQL_BUILDERS[cls.paramstyle]
 
-    @classmethod
-    def from_uri(cls, uri: str, **kwargs) -> 'RelationalDbCache':
-        assert re.match(r'\w+://.+', uri), uri
-        schema, database = uri.split('://')
-        return cls(database=database, **kwargs)
-
     def connect_db(self, database: str = None, connect_args: Dict[str, Any] = None):
         """
         Connect to a database, return a connection object described in pep-0249.
@@ -486,132 +471,30 @@ class RelationalDbCache(RegistrableCache, ABC):
         """
         return self.api_module.connect(database, **(connect_args or {}))
 
-    def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
-                 scopes: List[RelationalDbScopeConfig] = None,
-                 new_scope_config: Callable[[str], RelationalDbScopeConfig] = None,
-                 all_table_as_scope=True):
+    @classmethod
+    def from_uri(cls, uri: str, **kwargs) -> 'BaseRelationalDbCache':
+        assert re.match(r'\w+://.+', uri), uri
+        schema, database = uri.split('://')
+        return cls(database=database, **kwargs)
+
+    def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None):
         """
         Create a cache based on relational database.
         :param connection:          connection to the database
         :param database:            uri for the database
         :param connect_args:        custom connect args
-        :param scopes:              initialized scopes
-        :param new_scope_config:    when a new scope given, how to config it
-        :param all_table_as_scope:  if `True`, add all table in database to scopes
-
         """
         self.conn = connection or self.connect_db(database, connect_args)
         self.cursor = self.conn.cursor()
-        self._scopes = {}   # scope -> config
-        self._tables = {}   # table -> config, should correspond to _scopes
-        self._new_scope_config = new_scope_config
-        self._init_scopes(scopes=scopes, all_table_as_scope=all_table_as_scope)
 
     def close(self):
         self.cursor.close()
         self.conn.close()
 
-    def _add_scope(self, config: RelationalDbScopeConfig):
-        # scope and table should be uniq
-        if config.scope in self._scopes:
-            raise ValueError(f"duplicated scope: {config.scope}")
-        if config.table in self._tables:
-            raise ValueError(f"duplicated table: {config.table}")
-        self._scopes[config.scope] = config
-        self._tables[config.table] = config
-
-    def _create_table_if_not_exists(self, *scopes: RelationalDbScopeConfig):
+    def _create_table_if_not_exists(self, *scopes: BaseTableConfig):
         operations = [self.sql_builder.build_create_table_operation(config, check_exists=True)
                       for config in scopes]
         self._execute(*operations, cursor='new', commit=True)
-
-    def _get_all_table_names_in_db(self) -> List[str]:
-        """
-        Get all tables in the database, used when init scopes.
-        """
-        operation = self.sql_builder.build_select_all_table_operation()
-        # assume first is table name
-        return [x[0] for x in self._execute(operation, fetch_size='all')]
-
-    def _get_table_columns(self, table: str) -> List[Sequence[Any]]:
-        """
-        Get columns for given table.
-        :return:    column names
-        """
-        operation = self.sql_builder.build_select_table_columns_operation(table)
-        columns = self._execute(operation, fetch_size='all')
-        return list(columns)
-
-    def _get_table_column_names(self, table: str) -> List[str]:
-        """
-        Get column names for given table.
-        """
-        columns = self._get_table_columns(table)
-        return [self.sql_builder.get_column_name_from_result(x) for x in columns]
-
-    def _get_unique_columns(self, table: str) -> List[Sequence[Any]]:
-        """
-        Get uniq columns for given table.
-        """
-        operation = self.sql_builder.build_select_table_columns_operation(table, filter_uniq=True)
-        columns = self._execute(operation, fetch_size='all')
-        return list(columns)
-
-    def _get_unique_column_names(self, table: str) -> List[str]:
-        """
-        Get uniq column names for given table.
-        """
-        columns = self._get_unique_columns(table)
-        return [self.sql_builder.get_column_name_from_result(x) for x in columns]
-
-    def _get_unique_column_name(self, table: str) -> str:
-        """
-        Get uniq column name for given table.
-        """
-        warnings.warn("Deprecated, use _get_unique_column_names() instead", DeprecationWarning)
-        columns = self._get_unique_column_names(table)
-        if len(columns) != 1:
-            raise ValueError(f"There should be exactly one uniq column, but {len(columns)} has given.")
-        return columns[0]
-
-    def _init_scopes(self, scopes: List[RelationalDbScopeConfig], all_table_as_scope: bool):
-        # if some scopes have given, add to the scope mapper
-        # if table not exists, create it
-        if scopes:
-            for config in scopes:
-                self._add_scope(config)
-            self._create_table_if_not_exists(*scopes)
-
-        # find tables in database, if table not configured, add to the scope mapper
-        if all_table_as_scope:
-            # select all tables
-            table_names = self._get_all_table_names_in_db()
-
-            # table should not bound to a scope, and should not be same as a scope, remove these tables
-            table_names = [x for x in table_names if x not in self._tables and x not in self._scopes]
-
-            # for retain tables, add to the cache
-            for table in table_names:
-                columns = self._get_table_column_names(table)
-                uniq_columns = self._get_unique_column_names(table)
-                self._add_scope(RelationalDbScopeConfig(
-                    scope=table,    # use table name as scope
-                    table=table,
-                    uniq_columns=uniq_columns,     # uniq column as id
-                    columns=columns,
-                ))
-
-    def _get_scope_config(self, scope: str) -> RelationalDbScopeConfig:
-        if scope in self._scopes:
-            return self._scopes[scope]
-        if not self._new_scope_config:
-            raise ValueError(f"new scope is not allowed: {scope}")
-        config = self._new_scope_config(scope)
-        if scope != config.scope:
-            raise ValueError(f"conflict scope: {scope} {config.scope}")
-        self._add_scope(config)
-        self._create_table_if_not_exists(config)    # create table if not exists
-        return config
 
     def _fetch_data(self, cursor, size: _FETCH_SIZE_TYPE = None) -> Any:
         if size is None:
@@ -668,6 +551,211 @@ class RelationalDbCache(RegistrableCache, ABC):
             cursor.close()
         return result
 
+    def _get_all_table_names_in_db(self) -> List[str]:
+        """
+        Get all tables in the database, used when init scopes.
+        """
+        operation = self.sql_builder.build_select_all_table_operation()
+        # assume first is table name
+        return [x[0] for x in self._execute(operation, fetch_size='all')]
+
+    def _get_table_columns(self, table: str) -> List[Sequence[Any]]:
+        """
+        Get columns for given table.
+        :return:    column names
+        """
+        operation = self.sql_builder.build_select_table_columns_operation(table)
+        columns = self._execute(operation, fetch_size='all')
+        return list(columns)
+
+    def _get_table_column_names(self, table: str) -> List[str]:
+        """
+        Get column names for given table.
+        """
+        columns = self._get_table_columns(table)
+        return [self.sql_builder.get_column_name_from_result(x) for x in columns]
+
+    def _get_unique_columns(self, table: str) -> List[Sequence[Any]]:
+        """
+        Get uniq columns for given table.
+        """
+        operation = self.sql_builder.build_select_table_columns_operation(table, filter_uniq=True)
+        columns = self._execute(operation, fetch_size='all')
+        return list(columns)
+
+    def _get_unique_column_names(self, table: str) -> List[str]:
+        """
+        Get uniq column names for given table.
+        """
+        columns = self._get_unique_columns(table)
+        return [self.sql_builder.get_column_name_from_result(x) for x in columns]
+
+    def _get_unique_column_name(self, table: str) -> str:
+        """
+        Get uniq column name for given table.
+        """
+        warnings.warn("Deprecated, use _get_unique_column_names() instead", DeprecationWarning)
+        columns = self._get_unique_column_names(table)
+        if len(columns) != 1:
+            raise ValueError(f"There should be exactly one uniq column, but {len(columns)} has given.")
+        return columns[0]
+
+    def _exists(self, key: Sequence[Any], table: BaseTableConfig) -> bool:
+        """
+        Actual method to test if a key exists in the table.
+        :param key:         value of uniq columns
+        :param table:       table config
+        """
+        operation = self.sql_builder.build_select_operation(
+            config=table, key=key, limit=1,
+            select_columns=table.uniq_columns,
+        )
+        return self._execute(operation, fetch_size=1) is not None
+
+    def _fetch(self, key: Sequence[Any], table: BaseTableConfig, default: Any = None) -> Any:
+        """
+        Actual method to fetch data from table.
+        :param key:         value of uniq columns
+        :param table:       table config
+        :param default:     if select no data, return this value
+        """
+        operation = self.sql_builder.build_select_operation(
+            config=table, key=key, limit=1,
+            select_columns=table.columns,
+        )
+        row = self._execute(operation, fetch_size=1)
+        if row is None:
+            return default
+        value = dict(zip(table.columns, row))
+        return table.value_adapter.parse_column_values(value)
+
+    def _set(self, key: Sequence[Any], value: Any, table: BaseTableConfig) -> bool:
+        """
+        Actual method to update or insert row into table.
+        :param key:         value of uniq columns
+        :param value:       value of all other columns
+        :param table:       table config
+        """
+        value = table.value_adapter.build_column_values(value)
+        row = {}
+        for name, k in zip(table.uniq_columns, key):
+            if name in value and k != value[name]:
+                raise ValueError(f"column {name} key {k} is different from value {value[name]}")
+            row[name] = k
+        row.update((name, value[name]) for name in table.columns if name in value)
+        operation = self.sql_builder.build_update_operation(config=table, key=key, value=row)
+        self._execute(operation, cursor='new', auto_close_cursor=True, commit=True)
+        return True
+
+    def _pop(self, key: Sequence[Any], table: BaseTableConfig):
+        """
+        Actual method to remove row from table.
+        :param key:         value of uniq columns
+        :param table:       table config
+        """
+        operation = self.sql_builder.build_delete_operation(config=table, key=key)
+        self._execute(operation, cursor='new', auto_close_cursor=True, commit=True)
+
+
+class RelationalDbScopeConfig(BaseTableConfig):
+    def __init__(self, scope: Hashable, table: str = None,
+                 uniq_column: str = None,
+                 uniq_columns: Sequence[str] = ('id',),
+                 columns: Sequence[str] = ('data',),
+                 column_types: Dict[str, str] = None,
+                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
+                 default_column_type: str = None):
+        self.scope = scope
+        if not table:
+            if not isinstance(scope, str):
+                raise ValueError("Arg scope must be a str when table not given.")
+            table = scope
+        if uniq_column:
+            warnings.warn("`uniq_column` is deprecated, use `uniq_columns` instead.", DeprecationWarning)
+            uniq_columns = (uniq_column,)
+        super().__init__(table, uniq_columns, columns, column_types, value_adapter, default_column_type)
+
+class RelationalDbCache(BaseRelationalDbCache, ABC):
+    """
+    Use a relational database as backend.
+    Each scope corresponds to a table, and each key corresponds to a row.
+    It's recommended to use a string as key, but other type such as int is also allowed.
+    """
+
+    @classmethod
+    def from_uri(cls, uri: str, **kwargs) -> 'RelationalDbCache':
+        assert re.match(r'\w+://.+', uri), uri
+        schema, database = uri.split('://')
+        return cls(database=database, **kwargs)
+
+    def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
+                 scopes: List[RelationalDbScopeConfig] = None,
+                 new_scope_config: Callable[[str], RelationalDbScopeConfig] = None,
+                 all_table_as_scope=True):
+        """
+        Create a cache based on relational database.
+        :param connection:          connection to the database
+        :param database:            uri for the database
+        :param connect_args:        custom connect args
+        :param scopes:              initialized scopes
+        :param new_scope_config:    when a new scope given, how to config it
+        :param all_table_as_scope:  if `True`, add all table in database to scopes
+
+        """
+        super().__init__(connection, database, connect_args)
+        self._scopes = {}   # scope -> config
+        self._tables = {}   # table -> config, should correspond to _scopes
+        self._new_scope_config = new_scope_config
+        self._init_scopes(scopes=scopes, all_table_as_scope=all_table_as_scope)
+
+    def _add_scope(self, config: RelationalDbScopeConfig):
+        # scope and table should be uniq
+        if config.scope in self._scopes:
+            raise ValueError(f"duplicated scope: {config.scope}")
+        if config.table in self._tables:
+            raise ValueError(f"duplicated table: {config.table}")
+        self._scopes[config.scope] = config
+        self._tables[config.table] = config
+
+    def _init_scopes(self, scopes: List[RelationalDbScopeConfig], all_table_as_scope: bool):
+        # if some scopes have given, add to the scope mapper
+        # if table not exists, create it
+        if scopes:
+            for config in scopes:
+                self._add_scope(config)
+            self._create_table_if_not_exists(*scopes)
+
+        # find tables in database, if table not configured, add to the scope mapper
+        if all_table_as_scope:
+            # select all tables
+            table_names = self._get_all_table_names_in_db()
+
+            # table should not bound to a scope, and should not be same as a scope, remove these tables
+            table_names = [x for x in table_names if x not in self._tables and x not in self._scopes]
+
+            # for retain tables, add to the cache
+            for table in table_names:
+                columns = self._get_table_column_names(table)
+                uniq_columns = self._get_unique_column_names(table)
+                self._add_scope(RelationalDbScopeConfig(
+                    scope=table,    # use table name as scope
+                    table=table,
+                    uniq_columns=uniq_columns,     # uniq column as id
+                    columns=columns,
+                ))
+
+    def _get_scope_config(self, scope: str) -> RelationalDbScopeConfig:
+        if scope in self._scopes:
+            return self._scopes[scope]
+        if not self._new_scope_config:
+            raise ValueError(f"new scope is not allowed: {scope}")
+        config = self._new_scope_config(scope)
+        if scope != config.scope:
+            raise ValueError(f"conflict scope: {scope} {config.scope}")
+        self._add_scope(config)
+        self._create_table_if_not_exists(config)    # create table if not exists
+        return config
+
     def _check_key(self, key: _KEY_TYPE):
         if key is None:
             raise ValueError("Arg key should not be None.")
@@ -676,47 +764,25 @@ class RelationalDbCache(RegistrableCache, ABC):
         self._check_key(key)
         config = self._get_scope_config(scope)
         key = config.normalize_uniq_column_values(key)
-        operation = self.sql_builder.build_select_operation(
-            config=config, key=key, limit=1,
-            select_columns=config.uniq_columns,
-        )
-        return self._execute(operation, fetch_size=1) is not None
+        return self._exists(key, config)
 
     def fetch(self, key: _KEY_TYPE, default: Any = None, scope: Any = None, **kwargs) -> Any:
         self._check_key(key)
         config = self._get_scope_config(scope)
         key = config.normalize_uniq_column_values(key)
-        operation = self.sql_builder.build_select_operation(
-            config=config, key=key, limit=1,
-            select_columns=config.columns,
-        )
-        row = self._execute(operation, fetch_size=1)
-        if row is None:
-            return default
-        value = dict(zip(config.columns, row))
-        return config.value_adapter.parse_column_values(value)
+        return self._fetch(key, config, default=default)
 
     def set(self, key: _KEY_TYPE, value: Any, scope: Any = None, **kwargs) -> bool:
         self._check_key(key)
         config = self._get_scope_config(scope)
         key = config.normalize_uniq_column_values(key)
-        value = config.value_adapter.build_column_values(value)
-        row = {}
-        for name, k in zip(config.uniq_columns, key):
-            if name in value and k != value[name]:
-                raise ValueError(f"column {name} key {k} is different from value {value[name]}")
-            row[name] = k
-        row.update((name, value[name]) for name in config.columns if name in value)
-        operation = self.sql_builder.build_update_operation(config=config, key=key, value=row)
-        self._execute(operation, cursor='new', auto_close_cursor=True, commit=True)
-        return True
+        return self._set(key, value, config)
 
     def pop(self, key: _KEY_TYPE, scope: str = None, **kwargs) -> None:
         self._check_key(key)
         config = self._get_scope_config(scope)
         key = config.normalize_uniq_column_values(key)
-        operation = self.sql_builder.build_delete_operation(config=config, key=key)
-        self._execute(operation, cursor='new', auto_close_cursor=True, commit=True)
+        self._pop(key, config)
 
     def scopes(self) -> Iterable[str]:
         return self._scopes.keys()
@@ -725,4 +791,99 @@ class RelationalDbCache(RegistrableCache, ABC):
         config = self._get_scope_config(scope)
         operation = self.sql_builder.build_select_operation(config=config, key=None)
         return self._execute(operation, fetch_size='all', cursor='new')
+
+
+class SingleTableConfig(BaseTableConfig):
+    def __init__(self, table: str,
+                 scope_columns: Sequence[str] = ('scope',),
+                 key_columns: Sequence[str] = ('id',),
+                 columns: Sequence[str] = ('data',),
+                 column_types: Dict[str, str] = None,
+                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
+                 default_column_type: str = None):
+        self.scope_columns = tuple(scope_columns)
+        self.key_columns = tuple(key_columns)
+        uniq_columns = self.scope_columns + self.key_columns
+        super().__init__(table, uniq_columns, columns, column_types, value_adapter, default_column_type)
+
+    def normalize_scope_column_values(self, scope: Any) -> Sequence[Any]:
+        return self.normalize_columns_values(scope, self.scope_columns)
+
+    def normalize_key_column_values(self, scope: Any) -> Sequence[Any]:
+        return self.normalize_columns_values(scope, self.key_columns)
+
+class SingleTableCache(BaseRelationalDbCache):
+    """
+    Use single table in the db as backend.
+    This is useful when data of different scopes stored in the same table.
+    """
+
+    @classmethod
+    def from_uri(cls, uri: str, **kwargs) -> 'SingleTableCache':
+        assert re.match(r'\w+://.+', uri), uri
+        schema, database = uri.split('://')
+        return cls(database=database, **kwargs)
+
+    def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
+                 config: SingleTableConfig = None):
+        """
+        Create a cache based on relational database.
+        :param connection:          connection to the database
+        :param database:            uri for the database
+        :param connect_args:        custom connect args
+        :param config:              config columns for scope and uniq columns
+        """
+        super().__init__(connection, database, connect_args)
+        self.config = config
+
+    def _check_key(self, key: _KEY_TYPE, scope: _KEY_TYPE):
+        if key is None:
+            raise ValueError("Arg key should not be None.")
+        if scope is None:
+            raise ValueError("Arg scope should not be None.")
+
+    def _gen_uniq_column_values(self, key: _KEY_TYPE, scope: _KEY_TYPE) -> Sequence[Any]:
+        self._check_key(key, scope)
+        key = self.config.normalize_key_column_values(key)
+        scope = self.config.normalize_scope_column_values(scope)
+        return tuple(scope) + tuple(key)
+
+    def exists(self, key: _KEY_TYPE, scope: _KEY_TYPE = None, **kwargs) -> bool:
+        uniq_column_values = self._gen_uniq_column_values(key, scope)
+        return self._exists(uniq_column_values, self.config)
+
+    def fetch(self, key: _KEY_TYPE, default: Any = None, scope: _KEY_TYPE = None, **kwargs) -> Any:
+        uniq_column_values = self._gen_uniq_column_values(key, scope)
+        return self._fetch(uniq_column_values, self.config, default=default)
+
+    def set(self, key: _KEY_TYPE, value: Any, scope: _KEY_TYPE = None, **kwargs) -> Any:
+        uniq_column_values = self._gen_uniq_column_values(key, scope)
+        return self._set(uniq_column_values, value, self.config)
+
+    def pop(self, key: _KEY_TYPE, scope: _KEY_TYPE = None, **kwargs) -> Any:
+        uniq_column_values = self._gen_uniq_column_values(key, scope)
+        return self._pop(uniq_column_values, self.config)
+
+    def scopes(self) -> Iterable[Any]:
+        config = self.config
+        columns = config.scope_columns
+        operation = self.sql_builder.build_select_operation(config, select_columns=columns, distinct=True)
+        row = self._execute(operation, fetch_size='all')
+        if row is None:
+            return []
+        if len(columns) == 1:
+            return [x[0] for x in row]
+        return [tuple(x) for x in row]
+
+    def keys(self, scope: _KEY_TYPE = None) -> Iterable[Any]:
+        scope = self.config.normalize_scope_column_values(scope)
+        config = self.config
+        columns = config.key_columns
+        operation = self.sql_builder.build_select_operation(config, key=scope, select_columns=columns)
+        row = self._execute(operation, fetch_size='all')
+        if row is None:
+            return []
+        if len(columns) == 1:
+            return [x[0] for x in row]
+        return [tuple(x) for x in row]
 

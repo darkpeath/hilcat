@@ -8,8 +8,11 @@ import warnings
 from abc import ABC, abstractmethod
 from .relational import (
     FormatSqlBuilder,
+    BaseRelationalDbCache,
     RelationalDbScopeConfig,
-    RelationalDbCache, Operation, ValueAdapter,
+    RelationalDbCache,
+    SingleTableCache,
+    Operation, ValueAdapter,
 )
 
 class MysqlSqlBuilder(FormatSqlBuilder):
@@ -53,9 +56,9 @@ class MysqlScopeConfig(RelationalDbScopeConfig):
         super().__init__(scope, table, uniq_column, uniq_columns, columns, column_types, value_adapter,
                          default_column_type)
 
-class BaseBackend(RelationalDbCache, ABC):
+class BaseBackend(BaseRelationalDbCache, ABC):
     """
-    Use mysql database as backend.
+    Base abstract class for mysql backend.
     """
     paramstyle = 'format'
     sql_builder = MysqlSqlBuilder()
@@ -75,20 +78,29 @@ class BaseBackend(RelationalDbCache, ABC):
             warnings.warn("uri is ignored")
             return self._connect_db0(**kwargs)
 
-class PymysqlBackend(BaseBackend):
+class PymysqlBackend(BaseBackend, ABC):
     def _connect_db0(self, **kwargs):
         import pymysql
         return pymysql.connect(**kwargs)
 
-class MysqlConnectorBackend(BaseBackend):
+class MysqlConnectorBackend(BaseBackend, ABC):
     def _connect_db0(self, **kwargs):
         import mysql.connector
         return mysql.connector.connect(**kwargs)
 
 try:
     import pymysql
-    MysqlCache = PymysqlBackend
+    BaseMysqlCache = PymysqlBackend
 except ImportError:
     import mysql.connector
-    MysqlCache = MysqlConnectorBackend
+    BaseMysqlCache = MysqlConnectorBackend
 
+class MysqlCache(BaseMysqlCache, RelationalDbCache):
+    """
+    Use a mysql database as backend.
+    """
+
+class MysqlSingleTableCache(BaseMysqlCache, SingleTableCache):
+    """
+    Use one table of mysql as backend.
+    """

@@ -1,11 +1,18 @@
 # -*- coding: utf-8 -*-
 
 import re
+import abc
 import warnings
-from typing import List, Sequence, Any, Hashable, Dict, Union, Literal
+from typing import (
+    List, Sequence, Any,
+    Hashable, Dict, Union,
+    Literal,
+)
 from .relational import (
+    BaseRelationalDbCache,
     RelationalDbScopeConfig,
     RelationalDbCache,
+    SingleTableCache,
     Operation,
     QmarkSqlBuilder, ValueAdapter,
 )
@@ -33,9 +40,10 @@ class SqliteScopeConfig(RelationalDbScopeConfig):
         warnings.warn("use RelationalDbScopeConfig instead", DeprecationWarning)
         super().__init__(scope, table, uniq_column, uniq_columns, columns, column_types, value_adapter,
                          default_column_type)
-class SqliteCache(RelationalDbCache):
+
+class BaseSqliteCache(BaseRelationalDbCache, abc.ABC):
     """
-    Use a sqlite database as backend.
+    Base abstract class for sqlite backend.
     """
 
     api_module = sqlite3
@@ -43,7 +51,7 @@ class SqliteCache(RelationalDbCache):
     sql_builder = SqliteSqlBuilder()
 
     @classmethod
-    def from_uri(cls, uri: str, **kwargs) -> 'RelationalDbCache':
+    def from_uri(cls, uri: str, **kwargs) -> 'BaseSqliteCache':
         assert re.match(r'\w+:///.+', uri), uri
         schema, database = uri.split(':///')
         return cls(database=database, **kwargs)
@@ -60,3 +68,13 @@ class SqliteCache(RelationalDbCache):
         stmts = operation.statement.split(";")
         for stmt in stmts:
             cursor.execute(stmt.strip())
+
+class SqliteCache(BaseSqliteCache, RelationalDbCache):
+    """
+    Use a sqlite database as backend.
+    """
+
+class SqliteSingleTableCache(BaseSqliteCache, SingleTableCache):
+    """
+    Use one table of sqlite as backend.
+    """

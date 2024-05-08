@@ -36,6 +36,8 @@ from .db.relational import (
     PyformatSqlBuilder,
     RelationalDbScopeConfig,
     RelationalDbCache,
+    SingleTableConfig,
+    SingleTableCache,
 )
 
 try:
@@ -43,6 +45,7 @@ try:
         SqliteSqlBuilder,
         SqliteScopeConfig,
         SqliteCache,
+        SqliteSingleTableCache,
     )
 except ImportError:
     pass
@@ -54,6 +57,7 @@ try:
         PostgresqlBuilder,
         PostgresqlScopeConfig,
         PostgresqlCache,
+        PostgresqlSingleTableCache,
     )
 except ImportError:
     # psycopg maybe not installed
@@ -66,6 +70,7 @@ try:
         MysqlSqlBuilder,
         MysqlScopeConfig,
         MysqlCache,
+        MysqlSingleTableCache,
     )
 except ImportError:
     # pymysql or mysql.connector should be installed
