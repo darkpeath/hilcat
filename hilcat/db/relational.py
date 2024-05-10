@@ -497,9 +497,9 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
         self.cursor.close()
         self.conn.close()
 
-    def _create_table_if_not_exists(self, *scopes: BaseTableConfig):
+    def _create_table_if_not_exists(self, *tables: BaseTableConfig):
         operations = [self.sql_builder.build_create_table_operation(config, check_exists=True)
-                      for config in scopes]
+                      for config in tables]
         self._execute(*operations, cursor='new', commit=True)
 
     def _fetch_data(self, cursor, size: _FETCH_SIZE_TYPE = None) -> Any:
@@ -841,6 +841,7 @@ class SingleTableCache(BaseRelationalDbCache):
         """
         super().__init__(connection, database, connect_args)
         self.config = config
+        self._create_table_if_not_exists(config)
 
     def _check_key(self, key: _KEY_TYPE, scope: _KEY_TYPE):
         if key is None:
