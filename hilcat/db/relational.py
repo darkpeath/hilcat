@@ -211,13 +211,15 @@ class SqlBuilder(ABC):
 
     @abstractmethod
     def build_select_operation(self, config: BaseTableConfig, key: Sequence[Any] = None, limit: int = -1,
-                               select_columns: Sequence[str] = None, distinct=False) -> Operation:
+                               select_columns: Sequence[str] = None, condition_columns: Sequence[str] = None,
+                               distinct=False) -> Operation:
         """
         Generate sql to select row for given key.
         :param config:          scope configuration
         :param key:             uniq key for the row, maybe `None` to select all rows in the table
         :param limit:           limit number
-        :param select_columns:  columns to be selected, if not set, select all in config
+        :param select_columns:  columns to be selected; if not set, select all in config
+        :param condition_columns:  columns for where condition; if not set, use uniq columns
         :param distinct:        whether distinct select columns
         """
 
@@ -315,7 +317,8 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
         return variable_values
 
     def build_select_operation(self, config: BaseTableConfig, key: Sequence[Any] = None, limit: int = -1,
-                               select_columns: Sequence[str] = None, distinct=False) -> Operation:
+                               select_columns: Sequence[str] = None, condition_columns: Sequence[str] = None,
+                               distinct=False) -> Operation:
         if select_columns is None:
             # only select configured columns; if id not configured, ignore it
             select_columns = config.columns
@@ -327,9 +330,14 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
         stmt += f" {','.join(select_columns)} FROM {config.table}"
         variable_values = collections.OrderedDict()
         if key is not None:
-            assert len(config.uniq_columns) == len(key)
+            if condition_columns is None:
+                # use uniq columns as where condition
+                condition_columns = config.uniq_columns
+            elif isinstance(condition_columns, str):
+                condition_columns = [condition_columns]
+            assert len(condition_columns) == len(key)
             condition = []
-            for i, (name, k) in enumerate(zip(config.uniq_columns, key), 1):
+            for i, (name, k) in enumerate(zip(condition_columns, key), 1):
                 placeholder = self.config_variable(name=name, order=i, value=k, variable_mapping=variable_values)
                 condition.append(f"{name} = {placeholder}")
             condition = ' AND '.join(condition)
@@ -885,12 +893,17 @@ class SingleTableCache(BaseRelationalDbCache):
     def keys(self, scope: _KEY_TYPE = None) -> Iterable[Any]:
         scope = self.config.normalize_scope_column_values(scope)
         config = self.config
-        columns = config.key_columns
-        operation = self.sql_builder.build_select_operation(config, key=scope, select_columns=columns)
+        select_columns = config.key_columns
+        condition_columns = config.scope_columns
+        operation = self.sql_builder.build_select_operation(
+            config, key=scope,
+            select_columns=select_columns,
+            condition_columns=condition_columns
+        )
         row = self._execute(operation, fetch_size='all')
         if row is None:
             return []
-        if len(columns) == 1:
+        if len(select_columns) == 1:
             return [x[0] for x in row]
         return [tuple(x) for x in row]
 
