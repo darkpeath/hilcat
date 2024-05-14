@@ -77,13 +77,31 @@ class SingleJsonValueAdapter(SingleAdapter):
     Cache value is stored in one column, and can be a complex type
       such as dict or list, type in db is text in json format.
     """
+    def __init__(self, col: str, ensure_ascii=True):
+        super().__init__(col)
+        self.ensure_ascii = ensure_ascii
+
     def build_column_values(self, value: Dict[str, Any]) -> Dict[str, Any]:
-        value = json.dumps(value, ensure_ascii=False)
+        value = json.dumps(value, ensure_ascii=self.ensure_ascii)
         return super().build_column_values(value)
 
     def parse_column_values(self, value: Dict[str, Any]) -> Any:
         s = super().parse_column_values(value)
         return json.loads(s)
+
+class JsonValueAdapter(ValueAdapter):
+    """
+    All value type in db should be text.
+    """
+    def __init__(self, ensure_ascii=True):
+        super().__init__()
+        self.ensure_ascii = ensure_ascii
+
+    def build_column_values(self, value: Dict[str, Any]) -> Dict[str, Any]:
+        return {k: json.dumps(v, ensure_ascii=self.ensure_ascii) for k, v in value.items()}
+
+    def parse_column_values(self, value: Dict[str, Any]) -> Dict[str, Any]:
+        return {k: json.loads(v) for k, v in value.items()}
 
 class SequenceAdapter(ValueAdapter):
     """
