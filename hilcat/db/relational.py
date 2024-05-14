@@ -47,7 +47,7 @@ class ValueAdapter(ABC):
         Used in method `RelationalDbCache.fetch()` to parse column values.
         """
 
-class DefaultAdapter(ValueAdapter):
+class NoModifyAdapter(ValueAdapter):
     """
     Cache value should be exactly column values and thus nothing should do.
     """
@@ -130,13 +130,21 @@ class Operation:
     # many statements in template or not, if True, use cursor.executemany() instead of cursor.execute()
     many: bool = False
 
+_BUILTIN_ADAPTER_BUILDERS = {
+    'default': lambda cols: SingleAdapter(cols[0]) if len(cols) == 1 else NoModifyAdapter(),
+    'immutable': lambda cols: NoModifyAdapter(),
+    'single': lambda cols: SingleAdapter(cols[0]),
+    'tuple': lambda cols: SequenceAdapter(cols, return_type=tuple),
+    'list': lambda cols: SequenceAdapter(cols, return_type=list),
+    'json': lambda cols: SingleJsonValueAdapter(cols[0]) if len(cols) == 1 else JsonValueAdapter(),
+}
 
 class BaseTableConfig:
     def __init__(self, table: str,
                  uniq_columns: Sequence[str] = ('id',),
                  columns: Sequence[str] = ('data',),
                  column_types: Dict[str, str] = None,
-                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list', 'json'], ValueAdapter] = 'auto',
+                 value_adapter: Union[Literal['default', 'immutable', 'single', 'tuple', 'list', 'json'], ValueAdapter] = 'default',
                  default_column_type: str = None):
         """
         :param table:
@@ -161,29 +169,12 @@ class BaseTableConfig:
 
     @staticmethod
     def _check_value_adapter(adapter, columns: Sequence[str]) -> ValueAdapter:
-        if adapter == 'auto':
-            if len(columns) == 1:
-                return SingleAdapter(columns[0])
-            return DefaultAdapter()
-        elif adapter == 'default':
-            return DefaultAdapter()
-        elif adapter == 'single':
-            if len(columns) != 1:
-                raise ValueError(f"columns length should be 1 when value_adapter is 'single'.")
-            return SingleAdapter(columns[0])
-        elif adapter == 'tuple':
-            return SequenceAdapter(columns, return_type=tuple)
-        elif adapter == 'list':
-            return SequenceAdapter(columns, return_type=list)
-        elif adapter == 'json':
-            if len(columns) == 1:
-                return SingleJsonValueAdapter(columns[0])
-            else:
-                return JsonValueAdapter()
-
+        if adapter == 'single' and len(columns) != 1:
+            raise ValueError(f"columns length should be 1 when value_adapter is 'single'.")
+        if isinstance(adapter, str) and adapter in _BUILTIN_ADAPTER_BUILDERS:
+            return _BUILTIN_ADAPTER_BUILDERS[adapter]()
         if isinstance(adapter, ValueAdapter):
             return adapter
-
         if isinstance(adapter, str):
             msg = f"Unexpected value_adapter: {adapter}"
         else:
