@@ -136,7 +136,7 @@ class BaseTableConfig:
                  uniq_columns: Sequence[str] = ('id',),
                  columns: Sequence[str] = ('data',),
                  column_types: Dict[str, str] = None,
-                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
+                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list', 'json'], ValueAdapter] = 'auto',
                  default_column_type: str = None):
         """
         :param table:
@@ -175,6 +175,11 @@ class BaseTableConfig:
             return SequenceAdapter(columns, return_type=tuple)
         elif adapter == 'list':
             return SequenceAdapter(columns, return_type=list)
+        elif adapter == 'json':
+            if len(columns) == 1:
+                return SingleJsonValueAdapter(columns[0])
+            else:
+                return JsonValueAdapter()
 
         if isinstance(adapter, ValueAdapter):
             return adapter
