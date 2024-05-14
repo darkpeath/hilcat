@@ -5,6 +5,7 @@ Relational database can be used as a cache or a persistence storage.
 Actually, implement a cache is enough.
 """
 
+import json
 import collections
 from typing import (
     Any, Iterable, Dict,
@@ -70,6 +71,19 @@ class SingleAdapter(ValueAdapter):
 
     def parse_column_values(self, value: Dict[str, Any]) -> Any:
         return value[self.col]
+
+class SingleJsonValueAdapter(SingleAdapter):
+    """
+    Cache value is stored in one column, and can be a complex type
+      such as dict or list, type in db is text in json format.
+    """
+    def build_column_values(self, value: Dict[str, Any]) -> Dict[str, Any]:
+        value = json.dumps(value, ensure_ascii=False)
+        return super().build_column_values(value)
+
+    def parse_column_values(self, value: Dict[str, Any]) -> Any:
+        s = super().parse_column_values(value)
+        return json.loads(s)
 
 class SequenceAdapter(ValueAdapter):
     """
