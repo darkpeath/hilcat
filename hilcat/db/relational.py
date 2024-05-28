@@ -733,7 +733,7 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
     def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
                  scopes: List[RelationalDbScopeConfig] = None,
                  new_scope_config: Callable[[str], RelationalDbScopeConfig] = None,
-                 all_table_as_scope=True):
+                 all_table_as_scope=False):
         """
         Create a cache based on relational database.
         :param connection:          connection to the database
@@ -742,7 +742,6 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
         :param scopes:              initialized scopes
         :param new_scope_config:    when a new scope given, how to config it
         :param all_table_as_scope:  if `True`, add all table in database to scopes
-
         """
         super().__init__(connection, database, connect_args)
         self._scopes = {}   # scope -> config
