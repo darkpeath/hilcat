@@ -13,6 +13,7 @@ scopes = [
                             column_types={'count': 'int'}),
     RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status']),
     RelationalDbScopeConfig(scope='d', uniq_columns=['id1', 'id2'], columns=['value']),
+    RelationalDbScopeConfig(scope='e', uniq_columns=['id'], columns=['data']),
 ]
 def run_test(cache: Cache):
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')
@@ -29,6 +30,8 @@ def run_test(cache: Cache):
     cache.pop(key='a2', scope='a')
     cache.set(key=("d1", "d2"), value=3, scope="d")
     assert cache.get(("d1", "d2"), scope="d") == 3
+    cache.set("e1", {"a": 1, "b": "we"}, scope="e")
+    assert cache.get("e1", scope="e") == {'a': 1, 'b': 'we'}
 
 def test_sqlite():
     db_file = "t.db"
