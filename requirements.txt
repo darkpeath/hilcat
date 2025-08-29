@@ -1,0 +1,8 @@
+pytest
+pyyaml
+elasticsearch
+redis
+pymysql
+mysql.connector
+psycopg
+sqlitedict
