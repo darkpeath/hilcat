@@ -78,3 +78,8 @@ except ImportError:
 else:
     register_backend('mysql', MysqlCache)
 
+try:
+    # sqlitedict should be installed
+    from .third.sqlitedict import SqliteDictCache
+except ImportError:
+    pass
