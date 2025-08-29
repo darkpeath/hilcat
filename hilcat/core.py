@@ -54,7 +54,7 @@ def _create_fn(name: str, args: List[str], body: List[str], *,
 
 class Storage(ABC):
     """
-    Base storage class, all api is equal to the cache expect method load() and save().
+    Base storage class, all api is equal to the cache except method load() and save().
 
     Any key is under a scope, but scope can be always same value or None in some implements.
 
@@ -258,7 +258,7 @@ DEFAULT_BACKEND: Optional[Type[Cache]] = None
 
 def register_backend(schema: str, cls: Type[Cache]):
     """
-    Register a backend, then we can get create the cache by `Cache.from_uri()`.
+    Register a backend, then we can create the cache by `Cache.from_uri()`.
     """
     if schema in BACKENDS:
         warnings.warn(f"Backend {schema} already defined, it will be overwritten.")
