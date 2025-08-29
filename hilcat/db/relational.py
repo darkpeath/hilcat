@@ -28,6 +28,37 @@ _COLUMN_VALUE_TYPE = Union[str, int]
 _KEY_TYPE = Union[_COLUMN_VALUE_TYPE, Sequence[_COLUMN_VALUE_TYPE]]
 
 
+class ValueEncoder(ABC):
+    """
+    Encode cache value as dict with key to be column names.
+    """
+    @abstractmethod
+    def encode(self, value: Any) -> Dict[str, Any]:
+        pass
+
+    def __call__(self, value: Any) -> Dict[str, Any]:
+        return self.encode(value)
+
+class NoModifyEncoder(ValueEncoder):
+    def encode(self, value: Any) -> Dict[str, Any]:
+        return value
+
+class ValueDecoder(ABC):
+    """
+    Decode row selected from database.
+    """
+
+    @abstractmethod
+    def encode(self, value: Dict[str, Any]) -> Any:
+        pass
+
+    def __call__(self, value: Dict[str, Any]) -> Any:
+        return self.encode(value)
+
+class NoModifyDecoder(ValueDecoder):
+    def encode(self, value: Dict[str, Any]) -> Any:
+        return value
+
 # cache data format may diff from db api, we need an adapter to bridging
 class ValueAdapter(ABC):
     """
@@ -140,12 +171,17 @@ _BUILTIN_ADAPTER_BUILDERS = {
 }
 
 class BaseTableConfig:
-    def __init__(self, table: str,
-                 uniq_columns: Sequence[str] = ('id',),
-                 columns: Sequence[str] = ('data',),
-                 column_types: Dict[str, str] = None,
-                 value_adapter: Union[Literal['default', 'immutable', 'single', 'tuple', 'list', 'json'], ValueAdapter] = 'default',
-                 default_column_type: str = None):
+    def __init__(
+        self,
+        table: str,
+        uniq_columns: Sequence[str] = ('id',),
+        columns: Sequence[str] = ('data',),
+        column_types: Dict[str, str] = None,
+        value_adapter: Union[Literal['default', 'immutable', 'single', 'tuple', 'list', 'json'], ValueAdapter] = 'default',
+        default_column_type: str = None,
+        encoder: Union[None, ValueEncoder, Callable[[Any], Dict[str, Any]]] = None,
+        decoder: Union[None, ValueDecoder, Callable[[Dict[str, Any]], Any]] = None,
+    ):
         """
         :param table:
         :param uniq_columns:    unique columns to identify rows
@@ -153,6 +189,8 @@ class BaseTableConfig:
         :param column_types:    if column not specified here, type should be str
         :param value_adapter:   convert value when fetch and set
         :param default_column_type:     if column type not specified, use this value as default
+        :param encoder:         convert value when set
+        :param decoder:         convert value when fetch
         """
         self.table = table
         self.columns = columns
@@ -166,13 +204,25 @@ class BaseTableConfig:
             raise ValueError("uniq_columns cannot be empty.")
         self.columns_with_id = [x for x in self.uniq_columns if x not in self.columns] + list(self.columns)
         self.value_adapter = self._check_value_adapter(value_adapter, columns)
+        self.encoder = encoder
+        self.decoder = decoder
+        if self.encoder is None:
+            if self.value_adapter is not None:
+                self.encoder = self.value_adapter.build_column_values
+            else:
+                self.encoder = NoModifyEncoder()
+        if self.decoder is None:
+            if self.value_adapter is not None:
+                self.decoder = self.value_adapter.parse_column_values
+            else:
+                self.decoder = NoModifyDecoder()
 
     @staticmethod
     def _check_value_adapter(adapter, columns: Sequence[str]) -> ValueAdapter:
         if adapter == 'single' and len(columns) != 1:
             raise ValueError(f"columns length should be 1 when value_adapter is 'single'.")
         if isinstance(adapter, str) and adapter in _BUILTIN_ADAPTER_BUILDERS:
-            return _BUILTIN_ADAPTER_BUILDERS[adapter]()
+            return _BUILTIN_ADAPTER_BUILDERS[adapter](columns)
         if isinstance(adapter, ValueAdapter):
             return adapter
         if isinstance(adapter, str):
@@ -526,12 +576,28 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
         :param database:            uri for the database
         :param connect_args:        custom connect args
         """
-        self.conn = connection or self.connect_db(database, connect_args)
-        self.cursor = self.conn.cursor()
+        self._database = database
+        self._connect_args = connect_args
+        self._conn = connection
+        self._cursor = None
+
+    @property
+    def conn(self):
+        if self._conn is None:
+            self._conn = self.connect_db(self._database, self._connect_args)
+        return self._conn
+
+    @property
+    def cursor(self):
+        if self._cursor is None:
+            self._cursor = self.conn.cursor()
+        return self._cursor
 
     def close(self):
-        self.cursor.close()
-        self.conn.close()
+        if self._cursor is not None:
+            self._cursor.close()
+        if self._conn is not None:
+            self._conn.close()
 
     def _create_table_if_not_exists(self, *tables: BaseTableConfig):
         operations = [self.sql_builder.build_create_table_operation(config, check_exists=True)
@@ -669,7 +735,7 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
         if row is None:
             return default
         value = dict(zip(table.columns, row))
-        return table.value_adapter.parse_column_values(value)
+        return table.decoder(value)
 
     def _set(self, key: Sequence[Any], value: Any, table: BaseTableConfig) -> bool:
         """
@@ -678,7 +744,7 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
         :param value:       value of all other columns
         :param table:       table config
         """
-        value = table.value_adapter.build_column_values(value)
+        value = table.encoder(value)
         row = {}
         for name, k in zip(table.uniq_columns, key):
             if name in value and k != value[name]:
@@ -700,13 +766,18 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
 
 
 class RelationalDbScopeConfig(BaseTableConfig):
-    def __init__(self, scope: Optional[Hashable], table: str = None,
-                 uniq_column: str = None,
-                 uniq_columns: Sequence[str] = ('id',),
-                 columns: Sequence[str] = ('data',),
-                 column_types: Dict[str, str] = None,
-                 value_adapter: Union[Literal['auto', 'default', 'single', 'tuple', 'list'], ValueAdapter] = 'auto',
-                 default_column_type: str = None):
+    def __init__(
+        self,
+        scope: Optional[Hashable], table: str = None,
+        uniq_column: str = None,
+        uniq_columns: Sequence[str] = ('id',),
+        columns: Sequence[str] = ('data',),
+        column_types: Dict[str, str] = None,
+        value_adapter: Union[Literal['default', 'single', 'tuple', 'list', 'json'], ValueAdapter] = 'default',
+        default_column_type: str = None,
+        encoder: Union[None, ValueEncoder, Callable[[Any], Dict[str, Any]]] = None,
+        decoder: Union[None, ValueDecoder, Callable[[Dict[str, Any]], Any]] = None,
+    ):
         self.scope = scope
         if not table:
             if not isinstance(scope, str):
@@ -715,7 +786,16 @@ class RelationalDbScopeConfig(BaseTableConfig):
         if uniq_column:
             warnings.warn("`uniq_column` is deprecated, use `uniq_columns` instead.", DeprecationWarning)
             uniq_columns = (uniq_column,)
-        super().__init__(table, uniq_columns, columns, column_types, value_adapter, default_column_type)
+        super().__init__(
+            table=table,
+            uniq_columns=uniq_columns,
+            columns=columns,
+            column_types=column_types,
+            value_adapter=value_adapter,
+            default_column_type=default_column_type,
+            encoder=encoder,
+            decoder=decoder,
+        )
 
 class RelationalDbCache(BaseRelationalDbCache, ABC):
     """
