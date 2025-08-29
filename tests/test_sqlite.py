@@ -13,7 +13,10 @@ scopes = [
                             column_types={'count': 'int'}),
     RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status']),
     RelationalDbScopeConfig(scope='d', uniq_columns=['id1', 'id2'], columns=['value']),
-    RelationalDbScopeConfig(scope='e', uniq_columns=['id'], columns=['data']),
+    RelationalDbScopeConfig(
+        scope='e', uniq_columns=['id'], columns=['data'],
+        value_adapter='json',
+    ),
 ]
 def run_test(cache: Cache):
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')
