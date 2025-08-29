@@ -13,14 +13,14 @@ from .core import (
 )
 
 try:
-    from .redis import RedisCache
+    from .db.redis import RedisCache
 except ImportError:
     pass
 else:
     register_backend('redis', RedisCache)
 
 try:
-    from .es import ElasticSearchCache
+    from .db.es import ElasticSearchCache
 except ImportError:
     pass
 else:

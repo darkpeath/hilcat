@@ -2,7 +2,7 @@
 
 from typing import Any, Iterable, Union
 import redis
-from .core import RegistrableCache
+from ..core import RegistrableCache
 
 _REDIS_KEY_TYPE = Union[str, bytes]
 

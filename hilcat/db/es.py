@@ -4,7 +4,7 @@ from typing import (
     Any, Iterable,
     Dict,
 )
-from .core import RegistrableCache
+from ..core import RegistrableCache
 import elasticsearch as es
 
 class ElasticSearchCache(RegistrableCache):

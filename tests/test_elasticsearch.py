@@ -3,7 +3,7 @@
 import os
 import yaml
 from typing import Dict, Any
-from hilcat.es import ElasticSearchCache
+from hilcat.db.es import ElasticSearchCache
 
 def read_es_config() -> Dict[str, Any]:
     filepath = os.path.abspath(os.path.join(__file__, '../es.yml'))
