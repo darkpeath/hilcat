@@ -75,6 +75,14 @@ class Storage(ABC):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+    def __getitem__(self, item):
+        # just fetch value from default scope
+        return self.fetch(item)
+
+    def __setitem__(self, key, value):
+        # just set value as to default scope
+        self.set(key, value)
+
     @abstractmethod
     def exists(self, key: Any, scope: Any = None, **kwargs) -> bool:
         """
