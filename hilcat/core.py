@@ -236,12 +236,25 @@ class Cache(Storage, ABC):
         Subclass should override this method.
         """
         r = urllib.parse.urlsplit(uri)
-        engine = BACKENDS.get(r.scheme, DEFAULT_BACKEND)
-        if engine is not None:
-            return engine.from_uri(uri, **kwargs)
-        if r.scheme:
-            raise ValueError(f"schema not given: {uri}")
-        raise ValueError(f"Unsupported backend: {r.scheme}")
+        backend = BACKENDS.get(r.scheme, DEFAULT_BACKEND)
+        if backend is None:
+            if r.scheme:
+                raise ValueError(f"schema not given: {uri}")
+            raise ValueError(f"Unsupported backend: {r.scheme}")
+        if isinstance(backend, Cache):
+            # engine is a cache instance, return it directly
+            return backend
+        if inspect.isclass(backend) and issubclass(backend, Cache):
+            # engine is a cache subclass, create it
+            return backend.from_uri(uri, **kwargs)
+        if callable(backend):
+            # engine is a function, call it
+            # should inspect function signature and pass different args ?
+            try:
+                return backend(uri, **kwargs)
+            except TypeError:
+                return backend(uri, kwargs)
+        raise RuntimeError(f"Unexpected engine type: {type(backend)}")
 
     def load(self, scopes: Iterable[Any] = None, **kwargs):
         """
@@ -261,16 +274,17 @@ class Cache(Storage, ABC):
         self.backup(scopes, **kwargs)
 
 # schema -> cache builder; to build a cache from uri
-BACKENDS: Dict[str, Type[Cache]] = {}
-DEFAULT_BACKEND: Optional[Type[Cache]] = None
+_BACKEND_TYPE = Union[Cache, Type[Cache], Callable[[str, Dict[str, Any]], Cache]]
+BACKENDS: Dict[str, _BACKEND_TYPE] = {}
+DEFAULT_BACKEND: Optional[_BACKEND_TYPE] = None
 
-def register_backend(schema: str, cls: Type[Cache]):
+def register_backend(schema: str, backend: _BACKEND_TYPE):
     """
     Register a backend, then we can create the cache by `Cache.from_uri()`.
     """
     if schema in BACKENDS:
         warnings.warn(f"Backend {schema} already defined, it will be overwritten.")
-    BACKENDS[schema] = cls
+    BACKENDS[schema] = backend
 
 class RegistrableCache(Cache, ABC):
     """
