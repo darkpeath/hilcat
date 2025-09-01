@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 import re
 import abc
 import warnings
@@ -55,6 +56,12 @@ class BaseSqliteCache(BaseRelationalDbCache, abc.ABC):
         assert re.match(r'\w+:///.+', uri), uri
         schema, database = uri.split(':///')
         return cls(database=database, **kwargs)
+
+    def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None):
+        if database:
+            # ensure database directory exists
+            os.makedirs(os.path.dirname(database), exist_ok=True)
+        super().__init__(connection, database, connect_args)
 
     def _get_unique_columns(self, table: str) -> List[Sequence[Any]]:
         columns = self._get_table_columns(table)
