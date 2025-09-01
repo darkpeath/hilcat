@@ -8,16 +8,27 @@ def clear_db(db_file: str):
     if os.path.exists(db_file):
         os.remove(db_file)
 
-scopes = [
+list_scopes = [
     RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
                             column_types={'count': 'int'}),
     RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status']),
     RelationalDbScopeConfig(scope='d', uniq_columns=['id1', 'id2'], columns=['value']),
-    RelationalDbScopeConfig(
+    dict(
         scope='e', uniq_columns=['id'], columns=['data'],
         value_adapter='json',
     ),
 ]
+dict_scopes = {
+    "a": RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
+                                 column_types={'count': 'int'}),
+    "b": dict(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status']),
+    "d": RelationalDbScopeConfig(scope='d', uniq_columns=['id1', 'id2'], columns=['value']),
+    "e": dict(
+        scope='e', uniq_columns=['id'], columns=['data'],
+        value_adapter='json',
+    ),
+}
+
 def run_test(cache: Cache):
     cache.set(key='a1', value={'name': 'jii', 'comment': 'this is a1', 'count': 1}, scope='a')
     cache.set(key='a2', value={'name': 'iiwwww', 'comment': 'this is a2', 'count': 3}, scope='a')
@@ -36,16 +47,22 @@ def run_test(cache: Cache):
     cache.set("e1", {"a": 1, "b": "we"}, scope="e")
     assert cache.get("e1", scope="e") == {'a': 1, 'b': 'we'}
 
+def test_dict_config_args():
+    db_file = "t.db"
+    clear_db(db_file)
+    cache = SqliteCache(database=db_file, scopes=dict_scopes)
+    run_test(cache)
+
 def test_sqlite():
     db_file = "t.db"
     clear_db(db_file)
-    cache = SqliteCache(database=db_file, scopes=scopes)
+    cache = SqliteCache(database=db_file, scopes=list_scopes)
     run_test(cache)
 
 def test_from_uri():
     db_file = "t.db"
     clear_db(db_file)
-    cache = Cache.from_uri(f"sqlite:///{db_file}", scopes=scopes)
+    cache = Cache.from_uri(f"sqlite:///{db_file}", scopes=list_scopes)
     run_test(cache)
 
 

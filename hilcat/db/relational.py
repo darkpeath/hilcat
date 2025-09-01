@@ -797,6 +797,22 @@ class RelationalDbScopeConfig(BaseTableConfig):
             decoder=decoder,
         )
 
+_SCOPES_ARG_TYPE = Union[
+    None,
+    str,    # single scope cache
+    RelationalDbScopeConfig,
+    Dict[str, Union[
+        str,        # specify table name
+        Dict[str, Any],
+        RelationalDbScopeConfig
+    ]],
+    Sequence[Union[
+        str,    # only specify scope
+        Dict[str, Any],
+        RelationalDbScopeConfig
+    ]],
+]
+
 class RelationalDbCache(BaseRelationalDbCache, ABC):
     """
     Use a relational database as backend.
@@ -810,10 +826,12 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
         schema, database = uri.split('://')
         return cls(database=database, **kwargs)
 
-    def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
-                 scopes: List[RelationalDbScopeConfig] = None,
-                 new_scope_config: Callable[[str], RelationalDbScopeConfig] = None,
-                 all_table_as_scope=False):
+    def __init__(
+        self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
+        scopes: _SCOPES_ARG_TYPE = None,
+        new_scope_config: Callable[[str], RelationalDbScopeConfig] = None,
+        all_table_as_scope=False
+    ):
         """
         Create a cache based on relational database.
         :param connection:          connection to the database
@@ -827,7 +845,45 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
         self._scopes = {}   # scope -> config
         self._tables = {}   # table -> config, should correspond to _scopes
         self._new_scope_config = new_scope_config
-        self._init_scopes(scopes=scopes, all_table_as_scope=all_table_as_scope)
+        self._init_scopes(scopes=self._process_scopes_arg(scopes), all_table_as_scope=all_table_as_scope)
+
+    def _process_scopes_arg(self, scopes: _SCOPES_ARG_TYPE) -> List[RelationalDbScopeConfig]:
+        """
+        Process scopes arg given in __init__ function as a config list.
+        """
+        if scopes is None:
+            return []
+        elif isinstance(scopes, str):
+            return [RelationalDbScopeConfig(scopes)]
+        elif isinstance(scopes, RelationalDbScopeConfig):
+            return [scopes]
+        elif isinstance(scopes, dict):
+            result = []
+            for scope, config in scopes.items():
+                if isinstance(config, str):
+                    config = RelationalDbScopeConfig(scope, table=config)
+                elif isinstance(config, dict):
+                    if 'scope' in config and config['scope'] != scope:
+                        raise ValueError(f"conflict scope: {scope} {config['scope']}")
+                    config.pop('scope', None)
+                    config = RelationalDbScopeConfig(scope, **config)
+                if not isinstance(config, RelationalDbScopeConfig):
+                    raise ValueError(f"Invalid scope config type: {type(config)}")
+                if config.scope != scope:
+                    raise ValueError(f"conflict scope: {scope} {config.scope}")
+                result.append(config)
+            return result
+        else:
+            result = []
+            for config in scopes:
+                if isinstance(config, str):
+                    config = RelationalDbScopeConfig(config)
+                elif isinstance(config, dict):
+                    config = RelationalDbScopeConfig(**config)
+                if not isinstance(config, RelationalDbScopeConfig):
+                    raise ValueError(f"Invalid scope config type: {type(config)}")
+                result.append(config)
+            return result
 
     def _add_scope(self, config: RelationalDbScopeConfig):
         # scope and table should be uniq
@@ -871,6 +927,7 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
         if not self._new_scope_config:
             raise ValueError(f"new scope is not allowed: {scope}")
         config = self._new_scope_config(scope)
+        config = self._process_scopes_arg({scope: config})[0]
         if scope != config.scope:
             raise ValueError(f"conflict scope: {scope} {config.scope}")
         self._add_scope(config)
