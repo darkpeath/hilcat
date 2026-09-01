@@ -25,5 +25,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pytest sqlitedict
       - name: Run tests
-        # mysql / postgresql / elasticsearch tests need external services and are not run here
-        run: pytest tests/test_core.py tests/test_sqlite.py tests/test_decorator.py tests/test_sqlitedict.py -v
+        # mysql / postgresql / elasticsearch tests skip automatically when services are unavailable
+        run: pytest tests/ -v

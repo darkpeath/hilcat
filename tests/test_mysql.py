@@ -1,30 +1,34 @@
 # -*- coding: utf-8 -*-
 
-from hilcat import MysqlCache, RelationalDbScopeConfig
+import pytest
 
-def test_connect1():
-    import pymysql
-    conn = pymysql.connect(host='localhost', user='root', database='hilcat_test')
-    cursor = conn.cursor()
-    cursor.execute("SHOW TABLES")
-    res = list(cursor.fetchall())
-    print(res)
-    conn.close()
+# skip the whole module if no mysql client library is installed
+mysql_module = pytest.importorskip("hilcat.db.mysql")
+from hilcat import RelationalDbScopeConfig
 
-def test_connect2():
-    import mysql.connector
-    conn = mysql.connector.connect(host='localhost', user='root', database='hilcat_test')
-    cursor = conn.cursor()
-    cursor.execute("SHOW TABLES")
-    res = list(cursor.fetchall())
-    print(res)
-    conn.close()
+MysqlCache = mysql_module.MysqlCache
+
+CONNECT_ARGS = dict(host='localhost', user='root', database='hilcat_test')
+
+def _connect_pymysql():
+    pymysql = pytest.importorskip("pymysql")
+    try:
+        return pymysql.connect(**CONNECT_ARGS)
+    except Exception as e:
+        pytest.skip(f"mysql server not available: {e}")
+
+def _connect_mysql_connector():
+    connector = pytest.importorskip("mysql.connector")
+    try:
+        return connector.connect(**CONNECT_ARGS)
+    except Exception as e:
+        pytest.skip(f"mysql server not available: {e}")
 
 def pipeline(connection):
     scopes = [
-        RelationalDbScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
+        RelationalDbScopeConfig(scope='a', uniq_columns=['id'], columns=['id', 'name', 'comment', 'count'],
                                 column_types={'id': 'varchar(50)', 'count': 'int'}),
-        RelationalDbScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'],
+        RelationalDbScopeConfig(scope='b', uniq_columns=['eid'], columns=['eid', 'name', 'comment', 'status'],
                                 column_types={'eid': "int"}),
         RelationalDbScopeConfig(
             scope='d', uniq_columns=['id1', 'id2'], columns=['value'],
@@ -57,9 +61,7 @@ def pipeline(connection):
     assert cache.get(("d1", "d2"), scope="d") == 3
 
 def test_pymysql_backend():
-    import pymysql
-    pipeline(pymysql.connect(host='localhost', user='root', database='hilcat_test'))
+    pipeline(_connect_pymysql())
 
 def test_mysql_connector_backend():
-    import mysql.connector
-    pipeline(mysql.connector.connect(host='localhost', user='root', database='hilcat_test'))
+    pipeline(_connect_mysql_connector())

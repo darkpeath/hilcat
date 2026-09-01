@@ -1,7 +1,11 @@
 from typing import Union
 from pathlib import Path
 import os
+import pytest
 from hilcat import Cache
+
+# skip the whole module if sqlitedict is not installed
+pytest.importorskip("sqlitedict")
 from hilcat import SqliteDictCache
 
 def clear_db(db_file: Union[str, os.PathLike]):
