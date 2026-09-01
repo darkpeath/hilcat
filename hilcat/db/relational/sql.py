@@ -156,7 +156,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             select_columns = [select_columns]
         stmt = "SELECT"
         if distinct:
-            stmt += f" DISTINCT"
+            stmt += " DISTINCT"
         stmt += f" {','.join(select_columns)} FROM {config.table}"
         variable_values = collections.OrderedDict()
         if key is not None:

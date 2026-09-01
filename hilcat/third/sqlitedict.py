@@ -87,8 +87,12 @@ class SqliteDictCache(RegistrableCache):
     def pop(self, key: Any, scope: str = None, **kwargs) -> Any:
         if self._has_scope_cache(scope):
             d = self._get_scope_cache(scope)
-            return d.pop(key)
+            return d.pop(key, None)
         return None
+
+    def close(self):
+        for d in self._cache.values():
+            d.close()
 
     def scopes(self) -> Iterable[str]:
         return self._cache.keys()

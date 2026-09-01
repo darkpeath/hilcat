@@ -14,7 +14,6 @@ from abc import (
     ABC, abstractmethod,
 )
 import os
-import sys
 import json
 import inspect
 import pathlib
@@ -196,7 +195,6 @@ class Storage(ABC):
                             bind.apply_defaults()
                             return tuple(map(bind.arguments.get, parameters))
 
-            _globals = sys.modules[_f.__module__].__dict__
             func_var = get_var("_func", "__func")
             scope_var = get_var("_scope", "__scope")
             cache_var = get_var("_cache", "__cache")

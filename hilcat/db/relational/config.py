@@ -71,7 +71,7 @@ class BaseTableConfig:
     @staticmethod
     def _check_value_adapter(adapter, columns: Sequence[str]) -> ValueAdapter:
         if adapter == 'single' and len(columns) != 1:
-            raise ValueError(f"columns length should be 1 when value_adapter is 'single'.")
+            raise ValueError("columns length should be 1 when value_adapter is 'single'.")
         if isinstance(adapter, str) and adapter in _BUILTIN_ADAPTER_BUILDERS:
             return _BUILTIN_ADAPTER_BUILDERS[adapter](columns)
         if isinstance(adapter, ValueAdapter):

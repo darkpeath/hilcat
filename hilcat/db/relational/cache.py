@@ -453,6 +453,8 @@ class SingleTableCache(BaseRelationalDbCache):
         :param connect_args:        custom connect args
         :param config:              config columns for scope and uniq columns
         """
+        if config is None:
+            raise ValueError("Arg config should not be None.")
         super().__init__(connection, database, connect_args)
         self.config = config
         self._create_table_if_not_exists(config)
