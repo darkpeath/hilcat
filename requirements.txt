@@ -3,6 +3,6 @@ pyyaml
 elasticsearch
 redis
 pymysql
-mysql.connector
+mysql-connector-python
 psycopg
 sqlitedict

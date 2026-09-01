@@ -65,4 +65,28 @@ def test_from_uri():
     cache = Cache.from_uri(f"sqlite:///{db_file}", scopes=list_scopes)
     run_test(cache)
 
+def test_keys_and_scopes():
+    db_file = "t.db"
+    clear_db(db_file)
+    cache = SqliteCache(database=db_file, scopes=list_scopes)
+    run_test(cache)
+    assert set(cache.scopes()) == {'a', 'b', 'd', 'e'}
+    assert sorted(cache.keys(scope='a')) == ['a1', 'a3']
+    assert list(cache.keys(scope='d')) == [('d1', 'd2')]
+
+def test_single_table_cache():
+    from hilcat import SqliteSingleTableCache, SingleTableConfig
+    db_file = "t_single.db"
+    clear_db(db_file)
+    cache = SqliteSingleTableCache(database=db_file, config=SingleTableConfig(table='t'))
+    cache.set('k1', 'v1', scope='s1')
+    cache.set('k2', 'v2', scope='s1')
+    cache.set('k1', 'v3', scope='s2')
+    assert cache.fetch('k1', scope='s1') == 'v1'
+    assert cache.fetch('k1', scope='s2') == 'v3'
+    assert set(cache.scopes()) == {'s1', 's2'}
+    assert sorted(cache.keys('s1')) == ['k1', 'k2']
+    cache.pop('k1', scope='s2')
+    assert not cache.exists('k1', scope='s2')
+
 
