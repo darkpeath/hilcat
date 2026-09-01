@@ -75,6 +75,40 @@ def test_keys_and_scopes():
     assert sorted(cache.keys(scope='a')) == ['a1', 'a3']
     assert list(cache.keys(scope='d')) == [('d1', 'd2')]
 
+def test_all_table_as_scope():
+    db_file = "t.db"
+    clear_db(db_file)
+    cache = SqliteCache(database=db_file, scopes=list_scopes)
+    run_test(cache)
+    cache.close()
+    # reopen without scope configs, existing tables are discovered as scopes
+    cache2 = SqliteCache(database=db_file, all_table_as_scope=True)
+    assert set(cache2.scopes()) == {'a', 'b', 'd', 'e'}
+    row = cache2.fetch('a1', scope='a')
+    assert row['name'] == 'jjii'
+    cache2.close()
+
+def test_new_scope_config():
+    db_file = "t.db"
+    clear_db(db_file)
+    cache = SqliteCache(
+        database=db_file,
+        new_scope_config=lambda scope: RelationalDbScopeConfig(scope=scope, uniq_columns=['id'], columns=['data']),
+    )
+    # an unknown scope is created on the fly
+    cache.set('k1', 'v1', scope='dyn')
+    assert cache.fetch('k1', scope='dyn') == 'v1'
+    assert set(cache.scopes()) == {'dyn'}
+    cache.close()
+
+def test_unknown_scope_rejected():
+    db_file = "t.db"
+    clear_db(db_file)
+    cache = SqliteCache(database=db_file, scopes=['a'])
+    with pytest.raises(ValueError):
+        cache.set('k', 'v', scope='unknown')
+    cache.close()
+
 def test_invalid_identifier_rejected():
     # table and column names are interpolated into sql, they should be validated
     with pytest.raises(ValueError):

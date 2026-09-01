@@ -87,11 +87,12 @@ class MysqlConnectorBackend(BaseBackend, ABC):
         import mysql.connector
         return mysql.connector.connect(**kwargs)
 
+# choose the backend by the installed client library, prefer pymysql
 try:
-    import pymysql
+    import pymysql as _mysql_api     # noqa: F401
     BaseMysqlCache = PymysqlBackend
 except ImportError:
-    import mysql.connector
+    import mysql.connector as _mysql_api    # noqa: F401
     BaseMysqlCache = MysqlConnectorBackend
 
 class MysqlCache(BaseMysqlCache, RelationalDbCache):

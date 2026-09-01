@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest sqlitedict
+          python -m pip install pytest sqlitedict fakeredis
       - name: Run tests
         # mysql / postgresql / elasticsearch tests skip automatically when services are unavailable
         run: pytest tests/ -v

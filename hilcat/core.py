@@ -131,8 +131,13 @@ class Storage(ABC):
             get value from cache if key exists;
             else run the func and save value to the cache.
         """
-        if func is None or self.exists(key, scope=scope, **kwargs):
-            return self.fetch(key, scope=scope, **kwargs)
+        # fetch with a sentinel instead of exists() + fetch(),
+        # this halves the queries and avoids a race between the two calls
+        value = self.fetch(key, default=_MISSING, scope=scope, **kwargs)
+        if value is not _MISSING:
+            return value
+        if func is None:
+            return None
         func_args = func_args or []
         func_kwargs = func_kwargs or {}
         value = func(*func_args, **func_kwargs)

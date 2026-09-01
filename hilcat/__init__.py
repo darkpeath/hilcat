@@ -11,21 +11,6 @@ from .core import (
     CacheAgent,
     register_backend,
 )
-
-try:
-    from .db.redis import RedisCache
-except ImportError:
-    pass
-else:
-    register_backend('redis', RedisCache)
-
-try:
-    from .db.es import ElasticSearchCache
-except ImportError:
-    pass
-else:
-    register_backend('es', ElasticSearchCache)
-
 from .db.relational import (
     SqlBuilder,
     SimpleSqlBuilder,
@@ -40,6 +25,40 @@ from .db.relational import (
     SingleTableCache,
 )
 
+# names of optional backends are appended when the import succeeds
+__all__ = [
+    '__version__',
+    'Cache', 'NoOpCache', 'MemoryCache',
+    'LocalFileCache', 'SimpleLocalFileCache',
+    'BinaryFileCache', 'SimpleBinaryFileCache',
+    'TextFileCache', 'SimpleTextFileCache',
+    'SimpleJsonFileCache',
+    'MiddleCache', 'MemoryMiddleCache',
+    'CacheAgent',
+    'register_backend',
+    'SqlBuilder', 'SimpleSqlBuilder',
+    'QmarkSqlBuilder', 'NumericSqlBuilder', 'NamedSqlBuilder',
+    'FormatSqlBuilder', 'PyformatSqlBuilder',
+    'RelationalDbScopeConfig', 'RelationalDbCache',
+    'SingleTableConfig', 'SingleTableCache',
+]
+
+try:
+    from .db.redis import RedisCache
+except ImportError:
+    pass
+else:
+    register_backend('redis', RedisCache)
+    __all__.append('RedisCache')
+
+try:
+    from .db.es import ElasticSearchCache
+except ImportError:
+    pass
+else:
+    register_backend('es', ElasticSearchCache)
+    __all__.append('ElasticSearchCache')
+
 try:
     from .db.sqlite import (
         SqliteSqlBuilder,
@@ -51,6 +70,7 @@ except ImportError:
     pass
 else:
     register_backend('sqlite', SqliteCache)
+    __all__ += ['SqliteSqlBuilder', 'SqliteScopeConfig', 'SqliteCache', 'SqliteSingleTableCache']
 
 try:
     from .db.postgresql import (
@@ -64,6 +84,7 @@ except ImportError:
     pass
 else:
     register_backend('postgresql', PostgresqlCache)
+    __all__ += ['PostgresqlBuilder', 'PostgresqlScopeConfig', 'PostgresqlCache', 'PostgresqlSingleTableCache']
 
 try:
     from .db.mysql import (
@@ -77,9 +98,12 @@ except ImportError:
     pass
 else:
     register_backend('mysql', MysqlCache)
+    __all__ += ['MysqlSqlBuilder', 'MysqlScopeConfig', 'MysqlCache', 'MysqlSingleTableCache']
 
 try:
     # sqlitedict should be installed
     from .third.sqlitedict import SqliteDictCache
 except ImportError:
     pass
+else:
+    __all__.append('SqliteDictCache')
