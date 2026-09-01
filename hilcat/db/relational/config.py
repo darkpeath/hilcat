@@ -2,6 +2,7 @@ from typing import (
     Sequence, Dict, Union, Literal, Callable,
     Any, Optional, Hashable,
 )
+import re
 import dataclasses
 import warnings
 from .encoder import ValueEncoder, NoModifyEncoder
@@ -9,6 +10,16 @@ from .decoder import ValueDecoder, NoModifyDecoder
 from .adapter import ValueAdapter, _BUILTIN_ADAPTER_BUILDERS
 
 _EXECUTE_PARAM_TYPE = Union[Sequence[Any], Dict[str, Any]]
+
+# table and column names are interpolated into sql directly,
+# restrict them to safe identifiers to prevent sql injection
+# (a table name may be qualified with a schema, e.g. "public.users")
+_IDENTIFIER_PATTERN = re.compile(r'^[A-Za-z_]\w*(\.[A-Za-z_]\w*)?$')
+
+def check_identifier(name: str, what: str = 'identifier') -> str:
+    if not isinstance(name, str) or not _IDENTIFIER_PATTERN.match(name):
+        raise ValueError(f"Invalid {what}: {name!r}")
+    return name
 
 @dataclasses.dataclass
 class Operation:
@@ -43,7 +54,9 @@ class BaseTableConfig:
         :param encoder:         convert value when set
         :param decoder:         convert value when fetch
         """
-        self.table = table
+        self.table = check_identifier(table, 'table name')
+        if isinstance(columns, str):
+            columns = (columns,)
         self.columns = columns
         self.column_types = dict(column_types or {})
         self.default_column_type = default_column_type
@@ -54,6 +67,8 @@ class BaseTableConfig:
         if not self.uniq_columns:
             raise ValueError("uniq_columns cannot be empty.")
         self.columns_with_id = [x for x in self.uniq_columns if x not in self.columns] + list(self.columns)
+        for col in self.columns_with_id:
+            check_identifier(col, 'column name')
         self.value_adapter = self._check_value_adapter(value_adapter, columns)
         self.encoder = encoder
         self.decoder = decoder

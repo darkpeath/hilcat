@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import pytest
 from hilcat import Cache
 from hilcat import SqliteCache, RelationalDbScopeConfig
 
@@ -73,6 +74,13 @@ def test_keys_and_scopes():
     assert set(cache.scopes()) == {'a', 'b', 'd', 'e'}
     assert sorted(cache.keys(scope='a')) == ['a1', 'a3']
     assert list(cache.keys(scope='d')) == [('d1', 'd2')]
+
+def test_invalid_identifier_rejected():
+    # table and column names are interpolated into sql, they should be validated
+    with pytest.raises(ValueError):
+        RelationalDbScopeConfig(scope='bad; DROP TABLE x')
+    with pytest.raises(ValueError):
+        RelationalDbScopeConfig(scope='a', columns=['bad col'])
 
 def test_single_table_cache():
     from hilcat import SqliteSingleTableCache, SingleTableConfig
