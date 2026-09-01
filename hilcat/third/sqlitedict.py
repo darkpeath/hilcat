@@ -26,7 +26,10 @@ class SqliteDictCache(RegistrableCache):
         self, db_file: Union[str, os.PathLike], autocommit: bool = True,
         scopes: Union[str, Dict[str, Union[str, Dict[str, Any]]], Sequence[Union[str, Dict[str, Any]]]] = None,
     ):
-        os.makedirs(os.path.dirname(db_file), exist_ok=True)    # ensure db_file directory exists
+        # ensure db_file directory exists
+        db_dir = os.path.dirname(db_file)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
         self._db_file = db_file
         self.autocommit = autocommit
         self._cache = {}
