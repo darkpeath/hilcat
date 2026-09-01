@@ -50,6 +50,23 @@ def test_decorator_with_defaults_and_kwargs():
     assert f(1, 3, z=10) == 14
     assert len(calls) == 3
 
+def test_dict_protocol():
+    cache = MemoryCache()
+    cache['k'] = 1
+    assert 'k' in cache
+    assert cache['k'] == 1
+    del cache['k']
+    assert 'k' not in cache
+    with pytest.raises(KeyError):
+        cache['missing']
+
+def test_file_cache_rejects_path_escape(tmp_path):
+    cache = SimpleTextFileCache(root_dir=str(tmp_path / 'root'), suf='.txt')
+    with pytest.raises(ValueError):
+        cache.set('../escape', 'x')
+    with pytest.raises(ValueError):
+        cache.set('k', 'x', scope='../escape')
+
 def test_simple_text_file_cache(tmp_path):
     cache = SimpleTextFileCache(root_dir=str(tmp_path), suf='.txt')
     cache.set('a/b', 'hello')

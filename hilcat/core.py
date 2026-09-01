@@ -51,6 +51,9 @@ def _create_fn(name: str, args: List[str], body: List[str], *,
     exec(txt, _globals, ns)
     return ns['__create_fn__'](**_locals)
 
+# sentinel to distinguish "key missing" from "value is None"
+_MISSING = object()
+
 class Storage(ABC):
     """
     Base storage class, all api is equal to the cache except method load() and save().
@@ -75,12 +78,23 @@ class Storage(ABC):
         self.close()
 
     def __getitem__(self, item):
-        # just fetch value from default scope
-        return self.fetch(item)
+        # fetch value from default scope, raise KeyError if missing
+        value = self.fetch(item, default=_MISSING)
+        if value is _MISSING:
+            raise KeyError(item)
+        return value
 
     def __setitem__(self, key, value):
         # just set value as to default scope
         self.set(key, value)
+
+    def __delitem__(self, key):
+        # delete value from default scope
+        self.pop(key)
+
+    def __contains__(self, item):
+        # test if key exists in default scope
+        return self.exists(item)
 
     @abstractmethod
     def exists(self, key: Any, scope: Any = None, **kwargs) -> bool:
@@ -252,11 +266,14 @@ class Cache(Storage, ABC):
             return backend.from_uri(uri, **kwargs)
         if callable(backend):
             # engine is a function, call it
-            # should inspect function signature and pass different args ?
+            # check the signature first, so a TypeError raised inside the backend
+            # is not mistaken for a signature mismatch
             try:
-                return backend(uri, **kwargs)
+                inspect.signature(backend).bind(uri, **kwargs)
             except TypeError:
+                # the function consumes kwargs as a single dict arg
                 return backend(uri, kwargs)
+            return backend(uri, **kwargs)
         raise RuntimeError(f"Unexpected engine type: {type(backend)}")
 
     def load(self, scopes: Iterable[Any] = None, **kwargs):
@@ -464,7 +481,13 @@ class SimpleLocalFileCache(LocalFileCache, ABC):
         self.suf = suf
 
     def _get_filepath(self, key: str, scope: str = None) -> str:
-        return os.path.join(self.root_dir, scope or '', key + self.suf)
+        filepath = os.path.join(self.root_dir, scope or '', key + self.suf)
+        # key and scope may contain '/' to locate a file in sub directory,
+        # but escaping the root dir (e.g. via '..') is not allowed
+        root = os.path.abspath(self.root_dir)
+        if not os.path.abspath(filepath).startswith(root + os.sep):
+            raise ValueError(f"key or scope escapes the root dir: key={key!r} scope={scope!r}")
+        return filepath
 
     def keys(self, scope: str = None) -> Iterable[str]:
         # find all files under the directory
@@ -519,7 +542,7 @@ class MiddleCache(Cache, ABC):
 
     def load(self, scopes: Iterable[Any] = None, **kwargs):
         if scopes is None:
-            # It mab be not allowed to get all keys for the storage.
+            # It may be not allowed to get all keys for the storage.
             scopes = self.storage.keys()
         for scope in scopes:
             values = self.storage.fetch(scope)
