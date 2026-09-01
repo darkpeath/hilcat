@@ -118,12 +118,12 @@ class Storage(ABC):
             get value from cache if key exists;
             else run the func and save value to the cache.
         """
-        if func is None or self.exists(key, scope=scope):
-            return self.fetch(key, scope=scope)
+        if func is None or self.exists(key, scope=scope, **kwargs):
+            return self.fetch(key, scope=scope, **kwargs)
         func_args = func_args or []
         func_kwargs = func_kwargs or {}
         value = func(*func_args, **func_kwargs)
-        self.set(key, value, scope=scope)
+        self.set(key, value, scope=scope, **kwargs)
         return value
 
     @abstractmethod
@@ -167,45 +167,50 @@ class Storage(ABC):
             if len(parameters) == 0:
                 raise ValueError("Function consume no arg.")
 
-            has_kwargs = list(sig.parameters.values())[-1].kind.value == 5
+            has_kwargs = list(sig.parameters.values())[-1].kind == inspect.Parameter.VAR_KEYWORD
             make_key_var = get_var("_make_key", "__make_key")
             make_key = make_key_func
             if not make_key:
+                # apply defaults so f(1) and f(1, y=default) generate the same key
                 if len(parameters) == 1:
                     if has_kwargs:
                         def make_key(*args, **kwargs):
                             bind = sig.bind(*args, **kwargs)
+                            bind.apply_defaults()
                             return tuple(sorted(bind.arguments[parameters[0]].items()))
                     else:
                         def make_key(*args, **kwargs):
                             bind = sig.bind(*args, **kwargs)
+                            bind.apply_defaults()
                             return bind.arguments[parameters[0]]
                 else:
                     if has_kwargs:
                         def make_key(*args, **kwargs):
                             bind = sig.bind(*args, **kwargs)
+                            bind.apply_defaults()
                             return (tuple((x, bind.arguments[x]) for x in parameters[:-1]) +
                                     tuple(sorted(bind.arguments[parameters[-1]].items())))
                     else:
                         def make_key(*args, **kwargs):
                             bind = sig.bind(*args, **kwargs)
+                            bind.apply_defaults()
                             return tuple(map(bind.arguments.get, parameters))
 
             _globals = sys.modules[_f.__module__].__dict__
             func_var = get_var("_func", "__func")
-            score_var = get_var("_scope", "_scope")
+            scope_var = get_var("_scope", "__scope")
             cache_var = get_var("_cache", "__cache")
             _locals = {
                 "BUILTINS": builtins,
                 func_var: _f,
-                score_var: scope,
+                scope_var: scope,
                 cache_var: self,
                 make_key_var: make_key,
             }
             args = ["*args", "**kwargs"]
             body_lines = [
                 f"return {cache_var}.get({make_key_var}(*args, **kwargs),"
-                f" lambda: {func_var}(*args, **kwargs), scope={score_var})"
+                f" lambda: {func_var}(*args, **kwargs), scope={scope_var})"
             ]
             return_type = _f.__annotations__.get('return')
             func = _create_fn(_f.__name__, args, body_lines,
@@ -238,8 +243,8 @@ class Cache(Storage, ABC):
         r = urllib.parse.urlsplit(uri)
         backend = BACKENDS.get(r.scheme, DEFAULT_BACKEND)
         if backend is None:
-            if r.scheme:
-                raise ValueError(f"schema not given: {uri}")
+            if not r.scheme:
+                raise ValueError(f"scheme not given: {uri}")
             raise ValueError(f"Unsupported backend: {r.scheme}")
         if isinstance(backend, Cache):
             # engine is a cache instance, return it directly
@@ -303,7 +308,7 @@ class NoOpCache(Cache):
         return False
 
     def fetch(self, key: Any, default: Any = None, scope: Any = None, **kwargs) -> Any:
-        return None
+        return default
 
     def set(self, key: Any, value: Any, scope: Any = None, **kwargs) -> None:
         pass
