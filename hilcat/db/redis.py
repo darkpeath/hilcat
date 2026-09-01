@@ -16,7 +16,7 @@ class RedisCache(RegistrableCache):
     def from_uri(cls, uri: str, **kwargs) -> 'RedisCache':
         return cls(url=uri, **kwargs)
 
-    def __init__(self, client: redis.Redis = None, url: str = None, host: str = None, port: int = None, db=0):
+    def __init__(self, client: redis.Redis = None, url: str = None, host: str = None, port: int = 6379, db=0):
         if client is not None:
             self.client = client
         elif url is not None:
@@ -25,6 +25,9 @@ class RedisCache(RegistrableCache):
             self.client = redis.Redis(host=host, port=port, db=db)
         else:
             raise ValueError("One of client, url or host should given.")
+
+    def close(self):
+        self.client.close()
 
     def exists(self, key: _REDIS_KEY_TYPE, scope: Any = None, **kwargs) -> bool:
         return self.client.exists(key) > 0

@@ -3,7 +3,7 @@
 try:
     from ._dist_ver import VERSION, __version__
 except ImportError:
-    from importlib_metadata import version, PackageNotFoundError
+    from importlib.metadata import version, PackageNotFoundError
     try:
         __version__ = version('hilcat')
     except PackageNotFoundError:

@@ -26,7 +26,10 @@ class SqliteDictCache(RegistrableCache):
         self, db_file: Union[str, os.PathLike], autocommit: bool = True,
         scopes: Union[str, Dict[str, Union[str, Dict[str, Any]]], Sequence[Union[str, Dict[str, Any]]]] = None,
     ):
-        os.makedirs(os.path.dirname(db_file), exist_ok=True)    # ensure db_file directory exists
+        # ensure db_file directory exists
+        db_dir = os.path.dirname(db_file)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
         self._db_file = db_file
         self.autocommit = autocommit
         self._cache = {}
@@ -84,8 +87,12 @@ class SqliteDictCache(RegistrableCache):
     def pop(self, key: Any, scope: str = None, **kwargs) -> Any:
         if self._has_scope_cache(scope):
             d = self._get_scope_cache(scope)
-            return d.pop(key)
+            return d.pop(key, None)
         return None
+
+    def close(self):
+        for d in self._cache.values():
+            d.close()
 
     def scopes(self) -> Iterable[str]:
         return self._cache.keys()

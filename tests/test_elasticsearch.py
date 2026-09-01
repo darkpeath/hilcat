@@ -1,13 +1,20 @@
 # -*- coding: utf-8 -*-
 
 import os
-import yaml
+import pytest
 from typing import Dict, Any
+
+# skip the whole module if dependencies or the config file are missing
+pytest.importorskip("elasticsearch")
+yaml = pytest.importorskip("yaml")
 from hilcat.db.es import ElasticSearchCache
 
+CONFIG_FILE = os.path.abspath(os.path.join(__file__, '../es.yml'))
+if not os.path.exists(CONFIG_FILE):
+    pytest.skip(f"config file not found: {CONFIG_FILE}", allow_module_level=True)
+
 def read_es_config() -> Dict[str, Any]:
-    filepath = os.path.abspath(os.path.join(__file__, '../es.yml'))
-    with open(filepath, encoding='utf-8') as f:
+    with open(CONFIG_FILE, encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 def test_connect():

@@ -56,8 +56,12 @@ class BaseSqliteCache(BaseRelationalDbCache, abc.ABC):
         return cls(database=database, **kwargs)
 
     def connect_db(self, database: str = None, connect_args: Dict[str, Any] = None):
-        # ensure database directory exists
-        os.makedirs(os.path.dirname(database), exist_ok=True)
+        if database:
+            # ensure database directory exists
+            # dirname may be empty when database is a bare filename, e.g. "t.db"
+            db_dir = os.path.dirname(database)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
         return super().connect_db(database, connect_args)
 
     def _get_unique_columns(self, table: str) -> List[Sequence[Any]]:

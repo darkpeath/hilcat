@@ -81,8 +81,10 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
     def close(self):
         if self._cursor is not None:
             self._cursor.close()
+            self._cursor = None
         if self._conn is not None:
             self._conn.close()
+            self._conn = None
 
     def _create_table_if_not_exists(self, *tables: BaseTableConfig):
         operations = [self.sql_builder.build_create_table_operation(config, check_exists=True)
@@ -129,20 +131,27 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
         elif cursor == 'new':
             cursor = self.conn.cursor()
             close_cursor = auto_close_cursor
-        for operation in operations:
-            if isinstance(operation, str):
-                operation = Operation(statement=operation)
-            if operation.many:
-                self._execute_many0(cursor, operation)
-            else:
-                cursor.execute(operation.statement, operation.parameters)
-        result = self._fetch_data(cursor, size=fetch_size)
-        if commit:
-            self.conn.commit()
-        if close_cursor:
-            # close the cursor if it's created in this method
-            cursor.close()
-        return result
+        try:
+            for operation in operations:
+                if isinstance(operation, str):
+                    operation = Operation(statement=operation)
+                if operation.many:
+                    self._execute_many0(cursor, operation)
+                else:
+                    cursor.execute(operation.statement, operation.parameters)
+            result = self._fetch_data(cursor, size=fetch_size)
+            if commit:
+                self.conn.commit()
+            return result
+        except Exception:
+            if commit:
+                # rollback so a failed write does not leave the connection in a broken transaction
+                self.conn.rollback()
+            raise
+        finally:
+            if close_cursor:
+                # close the cursor if it's created in this method
+                cursor.close()
 
     def _get_all_table_names_in_db(self) -> List[str]:
         """
@@ -271,12 +280,6 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
     Each scope corresponds to a table, and each key corresponds to a row.
     It's recommended to use a string as key, but other type such as int is also allowed.
     """
-
-    @classmethod
-    def from_uri(cls, uri: str, **kwargs) -> 'RelationalDbCache':
-        assert re.match(r'\w+://.+', uri), uri
-        schema, database = uri.split('://')
-        return cls(database=database, **kwargs)
 
     def __init__(
         self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
@@ -419,20 +422,22 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
 
     def keys(self, scope: str = None) -> Iterable[str]:
         config = self._get_scope_config(scope)
-        operation = self.sql_builder.build_select_operation(config=config, key=None)
-        return self._execute(operation, fetch_size='all', cursor='new')
+        operation = self.sql_builder.build_select_operation(
+            config=config, key=None,
+            select_columns=config.uniq_columns,
+        )
+        rows = self._execute(operation, fetch_size='all', cursor='new')
+        if rows is None:
+            return []
+        if len(config.uniq_columns) == 1:
+            return [x[0] for x in rows]
+        return [tuple(x) for x in rows]
 
 class SingleTableCache(BaseRelationalDbCache):
     """
     Use single table in the db as backend.
     This is useful when data of different scopes stored in the same table.
     """
-
-    @classmethod
-    def from_uri(cls, uri: str, **kwargs) -> 'SingleTableCache':
-        assert re.match(r'\w+://.+', uri), uri
-        schema, database = uri.split('://')
-        return cls(database=database, **kwargs)
 
     def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
                  config: SingleTableConfig = None):
@@ -443,6 +448,8 @@ class SingleTableCache(BaseRelationalDbCache):
         :param connect_args:        custom connect args
         :param config:              config columns for scope and uniq columns
         """
+        if config is None:
+            raise ValueError("Arg config should not be None.")
         super().__init__(connection, database, connect_args)
         self.config = config
         self._create_table_if_not_exists(config)

@@ -14,7 +14,6 @@ from abc import (
     ABC, abstractmethod,
 )
 import os
-import sys
 import json
 import inspect
 import pathlib
@@ -52,6 +51,9 @@ def _create_fn(name: str, args: List[str], body: List[str], *,
     exec(txt, _globals, ns)
     return ns['__create_fn__'](**_locals)
 
+# sentinel to distinguish "key missing" from "value is None"
+_MISSING = object()
+
 class Storage(ABC):
     """
     Base storage class, all api is equal to the cache except method load() and save().
@@ -76,12 +78,23 @@ class Storage(ABC):
         self.close()
 
     def __getitem__(self, item):
-        # just fetch value from default scope
-        return self.fetch(item)
+        # fetch value from default scope, raise KeyError if missing
+        value = self.fetch(item, default=_MISSING)
+        if value is _MISSING:
+            raise KeyError(item)
+        return value
 
     def __setitem__(self, key, value):
         # just set value as to default scope
         self.set(key, value)
+
+    def __delitem__(self, key):
+        # delete value from default scope
+        self.pop(key)
+
+    def __contains__(self, item):
+        # test if key exists in default scope
+        return self.exists(item)
 
     @abstractmethod
     def exists(self, key: Any, scope: Any = None, **kwargs) -> bool:
@@ -118,12 +131,12 @@ class Storage(ABC):
             get value from cache if key exists;
             else run the func and save value to the cache.
         """
-        if func is None or self.exists(key, scope=scope):
-            return self.fetch(key, scope=scope)
+        if func is None or self.exists(key, scope=scope, **kwargs):
+            return self.fetch(key, scope=scope, **kwargs)
         func_args = func_args or []
         func_kwargs = func_kwargs or {}
         value = func(*func_args, **func_kwargs)
-        self.set(key, value, scope=scope)
+        self.set(key, value, scope=scope, **kwargs)
         return value
 
     @abstractmethod
@@ -167,45 +180,49 @@ class Storage(ABC):
             if len(parameters) == 0:
                 raise ValueError("Function consume no arg.")
 
-            has_kwargs = list(sig.parameters.values())[-1].kind.value == 5
+            has_kwargs = list(sig.parameters.values())[-1].kind == inspect.Parameter.VAR_KEYWORD
             make_key_var = get_var("_make_key", "__make_key")
             make_key = make_key_func
             if not make_key:
+                # apply defaults so f(1) and f(1, y=default) generate the same key
                 if len(parameters) == 1:
                     if has_kwargs:
                         def make_key(*args, **kwargs):
                             bind = sig.bind(*args, **kwargs)
+                            bind.apply_defaults()
                             return tuple(sorted(bind.arguments[parameters[0]].items()))
                     else:
                         def make_key(*args, **kwargs):
                             bind = sig.bind(*args, **kwargs)
+                            bind.apply_defaults()
                             return bind.arguments[parameters[0]]
                 else:
                     if has_kwargs:
                         def make_key(*args, **kwargs):
                             bind = sig.bind(*args, **kwargs)
+                            bind.apply_defaults()
                             return (tuple((x, bind.arguments[x]) for x in parameters[:-1]) +
                                     tuple(sorted(bind.arguments[parameters[-1]].items())))
                     else:
                         def make_key(*args, **kwargs):
                             bind = sig.bind(*args, **kwargs)
+                            bind.apply_defaults()
                             return tuple(map(bind.arguments.get, parameters))
 
-            _globals = sys.modules[_f.__module__].__dict__
             func_var = get_var("_func", "__func")
-            score_var = get_var("_scope", "_scope")
+            scope_var = get_var("_scope", "__scope")
             cache_var = get_var("_cache", "__cache")
             _locals = {
                 "BUILTINS": builtins,
                 func_var: _f,
-                score_var: scope,
+                scope_var: scope,
                 cache_var: self,
                 make_key_var: make_key,
             }
             args = ["*args", "**kwargs"]
             body_lines = [
                 f"return {cache_var}.get({make_key_var}(*args, **kwargs),"
-                f" lambda: {func_var}(*args, **kwargs), scope={score_var})"
+                f" lambda: {func_var}(*args, **kwargs), scope={scope_var})"
             ]
             return_type = _f.__annotations__.get('return')
             func = _create_fn(_f.__name__, args, body_lines,
@@ -238,8 +255,8 @@ class Cache(Storage, ABC):
         r = urllib.parse.urlsplit(uri)
         backend = BACKENDS.get(r.scheme, DEFAULT_BACKEND)
         if backend is None:
-            if r.scheme:
-                raise ValueError(f"schema not given: {uri}")
+            if not r.scheme:
+                raise ValueError(f"scheme not given: {uri}")
             raise ValueError(f"Unsupported backend: {r.scheme}")
         if isinstance(backend, Cache):
             # engine is a cache instance, return it directly
@@ -249,11 +266,14 @@ class Cache(Storage, ABC):
             return backend.from_uri(uri, **kwargs)
         if callable(backend):
             # engine is a function, call it
-            # should inspect function signature and pass different args ?
+            # check the signature first, so a TypeError raised inside the backend
+            # is not mistaken for a signature mismatch
             try:
-                return backend(uri, **kwargs)
+                inspect.signature(backend).bind(uri, **kwargs)
             except TypeError:
+                # the function consumes kwargs as a single dict arg
                 return backend(uri, kwargs)
+            return backend(uri, **kwargs)
         raise RuntimeError(f"Unexpected engine type: {type(backend)}")
 
     def load(self, scopes: Iterable[Any] = None, **kwargs):
@@ -303,7 +323,7 @@ class NoOpCache(Cache):
         return False
 
     def fetch(self, key: Any, default: Any = None, scope: Any = None, **kwargs) -> Any:
-        return None
+        return default
 
     def set(self, key: Any, value: Any, scope: Any = None, **kwargs) -> None:
         pass
@@ -461,7 +481,13 @@ class SimpleLocalFileCache(LocalFileCache, ABC):
         self.suf = suf
 
     def _get_filepath(self, key: str, scope: str = None) -> str:
-        return os.path.join(self.root_dir, scope or '', key + self.suf)
+        filepath = os.path.join(self.root_dir, scope or '', key + self.suf)
+        # key and scope may contain '/' to locate a file in sub directory,
+        # but escaping the root dir (e.g. via '..') is not allowed
+        root = os.path.abspath(self.root_dir)
+        if not os.path.abspath(filepath).startswith(root + os.sep):
+            raise ValueError(f"key or scope escapes the root dir: key={key!r} scope={scope!r}")
+        return filepath
 
     def keys(self, scope: str = None) -> Iterable[str]:
         # find all files under the directory
@@ -516,7 +542,7 @@ class MiddleCache(Cache, ABC):
 
     def load(self, scopes: Iterable[Any] = None, **kwargs):
         if scopes is None:
-            # It mab be not allowed to get all keys for the storage.
+            # It may be not allowed to get all keys for the storage.
             scopes = self.storage.keys()
         for scope in scopes:
             values = self.storage.fetch(scope)

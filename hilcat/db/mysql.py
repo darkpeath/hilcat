@@ -40,7 +40,7 @@ class MysqlSqlBuilder(FormatSqlBuilder):
         first = ','.join(self.config_variable(name=k, order=i, value=v)
                          for i, (k, v) in enumerate(value.items(), 1))
         second = ','.join(f'{k}={self.config_variable(name=k, order=i, value=v)}'
-                          for i, (k, v) in enumerate(value.items(), 1))
+                          for i, (k, v) in enumerate(value.items(), len(value) + 1))
         return (f"INSERT INTO {config.table}({','.join(value.keys())})"
                 f" VALUES ({first})"
                 f" ON DUPLICATE KEY"
@@ -74,9 +74,8 @@ class BaseBackend(BaseRelationalDbCache, ABC):
         kwargs = dict(connect_args or {})
         if database is not None:
             # TODO 2023/10/12  parse uri
-            import warnings
             warnings.warn("uri is ignored")
-            return self._connect_db0(**kwargs)
+        return self._connect_db0(**kwargs)
 
 class PymysqlBackend(BaseBackend, ABC):
     def _connect_db0(self, **kwargs):

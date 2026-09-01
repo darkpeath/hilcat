@@ -59,7 +59,7 @@ cache text content in file
 
   from hilcat import SimpleTextFileCache
 
-  cache = SimpleTextFileCache()
+  cache = SimpleTextFileCache(root_dir='cache_dir', suf='.txt')
 
 redis
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -78,7 +78,7 @@ init from host
 
   from hilcat import RedisCache
 
-  cache = RedisCache(host='localhost', port=6579)
+  cache = RedisCache(host='localhost', port=6379)
 
 elasticsearch
 ^^^^^^^^^^^^^^^^^^^
@@ -94,12 +94,12 @@ sqlite
 
 .. code-block:: python
 
-  from hilcat import SqliteCache, SqliteScopeConfig
+  from hilcat import SqliteCache, RelationalDbScopeConfig
 
   cache = SqliteCache(database=db_file, scopes=[
-      SqliteScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
-                        column_types={'count': 'int'}),
-      SqliteScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
+      RelationalDbScopeConfig(scope='a', uniq_columns=['id'], columns=['id', 'name', 'comment', 'count'],
+                              column_types={'count': 'int'}),
+      RelationalDbScopeConfig(scope='b', uniq_columns=['eid'], columns=['eid', 'name', 'comment', 'status'])
   ])
 
 postgresql
@@ -107,12 +107,12 @@ postgresql
 
 .. code-block:: python
 
-  from hilcat import PostgresqlCache, PostgresqlScopeConfig
+  from hilcat import PostgresqlCache, RelationalDbScopeConfig
 
   cache = PostgresqlCache(database="postgresql://postgres:123@localhost:5432/hilcat_test", scopes=[
-      PostgresqlScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
-                            column_types={'count': 'int'}),
-      # PostgresqlScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'])
+      RelationalDbScopeConfig(scope='a', uniq_columns=['id'], columns=['id', 'name', 'comment', 'count'],
+                              column_types={'count': 'int'}),
+      # RelationalDbScopeConfig(scope='b', uniq_columns=['eid'], columns=['eid', 'name', 'comment', 'status'])
   ])
 
 mysql
@@ -120,13 +120,13 @@ mysql
 
 .. code-block:: python
 
-  from hilcat import MysqlCache, MysqlScopeConfig
+  from hilcat import MysqlCache, RelationalDbScopeConfig
 
   cache = MysqlCache(connection=connection, scopes=[
-      MysqlScopeConfig(scope='a', uniq_column='id', columns=['id', 'name', 'comment', 'count'],
-                       column_types={'id': 'varchar(50)', 'count': 'int'}),
-      MysqlScopeConfig(scope='b', uniq_column='eid', columns=['eid', 'name', 'comment', 'status'],
-                       column_types={'eid': "int"})
+      RelationalDbScopeConfig(scope='a', uniq_columns=['id'], columns=['id', 'name', 'comment', 'count'],
+                              column_types={'id': 'varchar(50)', 'count': 'int'}),
+      RelationalDbScopeConfig(scope='b', uniq_columns=['eid'], columns=['eid', 'name', 'comment', 'status'],
+                              column_types={'eid': "int"})
   ])
 
 cache api
@@ -210,12 +210,12 @@ Decorate a function
 .. code-block:: python
 
     import collections
-    from hilcat import SqliteCache, SqliteScopeConfig
+    from hilcat import SqliteCache, RelationalDbScopeConfig
 
     db_file = "decorator.db"
     cache = SqliteCache(database=db_file, scopes=[
-        SqliteScopeConfig(scope='f1', uniq_column='x', columns=['y']),
-        SqliteScopeConfig(scope='f3', uniq_column='key', columns=['key', 'value'])
+        RelationalDbScopeConfig(scope='f1', uniq_columns=['x'], columns=['y']),
+        RelationalDbScopeConfig(scope='f3', uniq_columns=['key'], columns=['key', 'value'])
     ])
 
     c1 = collections.Counter()

@@ -92,22 +92,13 @@ class SequenceAdapter(ValueAdapter):
     def parse_column_values(self, value: Dict[str, Any]) -> Sequence[Any]:
         return self.return_type(map(value.get, self.cols))
 
-class AutoAdapter(ValueAdapter):
-    def __init__(self, cols: Sequence[str]):
-        self.cols = list(cols)
-        self.adapter = None
-
-    def build_column_values(self, value: Any) -> Dict[str, Any]:
-        # TODO 8/29/25
-        # determine the actual adapter when first time see the data
-        pass
-
-    def parse_column_values(self, value: Dict[str, Any]) -> Any:
-        # TODO 8/29/25
-        pass
+def _build_default_adapter(cols: Sequence[str]) -> ValueAdapter:
+    return SingleAdapter(cols[0]) if len(cols) == 1 else NoModifyAdapter()
 
 _BUILTIN_ADAPTER_BUILDERS = {
-    'default': lambda cols: SingleAdapter(cols[0]) if len(cols) == 1 else NoModifyAdapter(),
+    'default': _build_default_adapter,
+    # 'auto' may determine the adapter from data in the future, behave same as 'default' for now
+    'auto': _build_default_adapter,
     'immutable': lambda cols: NoModifyAdapter(),
     'single': lambda cols: SingleAdapter(cols[0]),
     'tuple': lambda cols: SequenceAdapter(cols, return_type=tuple),

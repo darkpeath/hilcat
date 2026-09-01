@@ -1,7 +1,11 @@
 from typing import Union
 from pathlib import Path
 import os
+import pytest
 from hilcat import Cache
+
+# skip the whole module if sqlitedict is not installed
+pytest.importorskip("sqlitedict")
 from hilcat import SqliteDictCache
 
 def clear_db(db_file: Union[str, os.PathLike]):
@@ -15,6 +19,9 @@ def run_test(cache: Cache):
     cache.set(key='a3', value={'name': 'lli', 'comment': 'this is a3', 'count': 2}, scope='a')
     cache.set(key='a1', value={'name': 'jjii', 'comment': 'this is a1 again', 'count': 4}, scope='a')
     cache.pop(key='a2', scope='a')
+    # pop missing key or scope should return None instead of raising
+    assert cache.pop(key='missing', scope='a') is None
+    assert cache.pop(key='a1', scope='missing') is None
     cache.set("e1", {"a": 1, "b": "we"}, scope="e")
     assert cache.get("e1", scope="e") == {'a': 1, 'b': 'we'}
 
