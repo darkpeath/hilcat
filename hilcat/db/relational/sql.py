@@ -106,7 +106,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
         return sql
 
     def build_create_table_operation(self, *configs: BaseTableConfig, check_exists=True) -> Operation:
-        lines = [self._gen_create_table_sql(x) + ";" for x in configs]
+        lines = [self._gen_create_table_sql(x, check_exists=check_exists) + ";" for x in configs]
         return Operation(statement="\n".join(lines), many=len(configs) > 1)
 
     @abstractmethod
@@ -184,8 +184,9 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
         # sql is writen based of syntax of sqlite, maybe is incapable with other database
         first = ','.join(self.config_variable(name=k, order=i, value=v)
                          for i, (k, v) in enumerate(value.items(), 1))
+        # parameters are passed twice, so numeric placeholders of the SET part start after the VALUES part
         second = ','.join(f'{k}={self.config_variable(name=k, order=i, value=v)}'
-                          for i, (k, v) in enumerate(value.items(), 1))
+                          for i, (k, v) in enumerate(value.items(), len(value) + 1))
         return (f"INSERT INTO {config.table}({','.join(value.keys())})"
                 f" VALUES ({first})"
                 f" ON CONFLICT({','.join(config.uniq_columns)}) DO UPDATE"
@@ -220,7 +221,7 @@ class SimpleSqlBuilder(SqlBuilder, ABC):
             assert len(config.uniq_columns) == len(key)
             condition = []
             for i, (name, k) in enumerate(zip(config.uniq_columns, key), 1):
-                placeholder = self.config_variable(name=name, order=1, value=k,
+                placeholder = self.config_variable(name=name, order=i, value=k,
                                                    variable_mapping=variable_values)
                 condition.append(f"{name} = {placeholder}")
             condition = ' AND '.join(condition)

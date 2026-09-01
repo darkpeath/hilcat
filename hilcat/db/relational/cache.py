@@ -81,8 +81,10 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
     def close(self):
         if self._cursor is not None:
             self._cursor.close()
+            self._cursor = None
         if self._conn is not None:
             self._conn.close()
+            self._conn = None
 
     def _create_table_if_not_exists(self, *tables: BaseTableConfig):
         operations = [self.sql_builder.build_create_table_operation(config, check_exists=True)
@@ -419,8 +421,16 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
 
     def keys(self, scope: str = None) -> Iterable[str]:
         config = self._get_scope_config(scope)
-        operation = self.sql_builder.build_select_operation(config=config, key=None)
-        return self._execute(operation, fetch_size='all', cursor='new')
+        operation = self.sql_builder.build_select_operation(
+            config=config, key=None,
+            select_columns=config.uniq_columns,
+        )
+        rows = self._execute(operation, fetch_size='all', cursor='new')
+        if rows is None:
+            return []
+        if len(config.uniq_columns) == 1:
+            return [x[0] for x in rows]
+        return [tuple(x) for x in rows]
 
 class SingleTableCache(BaseRelationalDbCache):
     """

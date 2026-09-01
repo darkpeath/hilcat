@@ -7,13 +7,12 @@ class ValueDecoder(ABC):
     """
 
     @abstractmethod
-    def encode(self, value: Dict[str, Any]) -> Any:
+    def decode(self, value: Dict[str, Any]) -> Any:
         pass
 
     def __call__(self, value: Dict[str, Any]) -> Any:
-        return self.encode(value)
+        return self.decode(value)
 
 class NoModifyDecoder(ValueDecoder):
-    def encode(self, value: Dict[str, Any]) -> Any:
+    def decode(self, value: Dict[str, Any]) -> Any:
         return value
-
