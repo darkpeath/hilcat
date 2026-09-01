@@ -36,7 +36,7 @@ class ElasticSearchCache(RegistrableCache):
         try:
             res = self.client.get(index=scope, id=key)
         except es.NotFoundError:
-            return None
+            return default
         return res.body.get('_source', default)
 
     def set(self, key: str, value: Dict[str, Any], scope: str = None, **kwargs) -> bool:
@@ -44,8 +44,14 @@ class ElasticSearchCache(RegistrableCache):
         return res.body.get('result') in ['created', 'updated']
 
     def pop(self, key: str, scope: str = None, **kwargs) -> bool:
-        res = self.client.delete(index=scope, id=key)
+        try:
+            res = self.client.delete(index=scope, id=key)
+        except es.NotFoundError:
+            return False
         return res.body.get('result') == 'deleted'
+
+    def close(self):
+        self.client.close()
 
     def scopes(self) -> Iterable[str]:
         # it's not suggested to get all indexes in es
