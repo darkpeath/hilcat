@@ -7,6 +7,7 @@ name = "hilcat"
 dynamic = ["version"]
 description = "High Level Cache Tool."
 readme = "README.rst"
+requires-python = ">=3.8"
 authors = [
     {name = "darkpeath", email = "darkpeath@gmail.com"}
 ]
@@ -14,6 +15,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+redis = ["redis"]
+elasticsearch = ["elasticsearch"]
+postgresql = ["psycopg"]
+mysql = ["pymysql"]
+sqlitedict = ["sqlitedict"]
+all = ["redis", "elasticsearch", "psycopg", "pymysql", "sqlitedict"]
 
 [project.urls]
 Homepage = "https://github.com/darkpeath/hilcat"
