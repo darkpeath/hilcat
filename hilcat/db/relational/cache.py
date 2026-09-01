@@ -131,20 +131,27 @@ class BaseRelationalDbCache(RegistrableCache, ABC):
         elif cursor == 'new':
             cursor = self.conn.cursor()
             close_cursor = auto_close_cursor
-        for operation in operations:
-            if isinstance(operation, str):
-                operation = Operation(statement=operation)
-            if operation.many:
-                self._execute_many0(cursor, operation)
-            else:
-                cursor.execute(operation.statement, operation.parameters)
-        result = self._fetch_data(cursor, size=fetch_size)
-        if commit:
-            self.conn.commit()
-        if close_cursor:
-            # close the cursor if it's created in this method
-            cursor.close()
-        return result
+        try:
+            for operation in operations:
+                if isinstance(operation, str):
+                    operation = Operation(statement=operation)
+                if operation.many:
+                    self._execute_many0(cursor, operation)
+                else:
+                    cursor.execute(operation.statement, operation.parameters)
+            result = self._fetch_data(cursor, size=fetch_size)
+            if commit:
+                self.conn.commit()
+            return result
+        except Exception:
+            if commit:
+                # rollback so a failed write does not leave the connection in a broken transaction
+                self.conn.rollback()
+            raise
+        finally:
+            if close_cursor:
+                # close the cursor if it's created in this method
+                cursor.close()
 
     def _get_all_table_names_in_db(self) -> List[str]:
         """
@@ -273,12 +280,6 @@ class RelationalDbCache(BaseRelationalDbCache, ABC):
     Each scope corresponds to a table, and each key corresponds to a row.
     It's recommended to use a string as key, but other type such as int is also allowed.
     """
-
-    @classmethod
-    def from_uri(cls, uri: str, **kwargs) -> 'RelationalDbCache':
-        assert re.match(r'\w+://.+', uri), uri
-        schema, database = uri.split('://')
-        return cls(database=database, **kwargs)
 
     def __init__(
         self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
@@ -437,12 +438,6 @@ class SingleTableCache(BaseRelationalDbCache):
     Use single table in the db as backend.
     This is useful when data of different scopes stored in the same table.
     """
-
-    @classmethod
-    def from_uri(cls, uri: str, **kwargs) -> 'SingleTableCache':
-        assert re.match(r'\w+://.+', uri), uri
-        schema, database = uri.split('://')
-        return cls(database=database, **kwargs)
 
     def __init__(self, connection=None, database: str = None, connect_args: Dict[str, Any] = None,
                  config: SingleTableConfig = None):
